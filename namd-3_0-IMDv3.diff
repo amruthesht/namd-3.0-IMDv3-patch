@@ -1,0 +1,3040 @@
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..3db89aa
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,8 @@
++# Project-level ignore patterns
++
++# Ignore dependencies
++fftw*
++tcl*
++
++# Ignore build artifacts
++Linux-x86_64*
+diff --git a/.vscode/settings.json b/.vscode/settings.json
+new file mode 100644
+index 0000000..7b67444
+--- /dev/null
++++ b/.vscode/settings.json
+@@ -0,0 +1,6 @@
++{
++    "files.associations": {
++        "*.m": "matlab",
++        "imd.C": "cpp"
++    }
++}
+\ No newline at end of file
+diff --git a/IMDv3-dev.md b/IMDv3-dev.md
+new file mode 100644
+index 0000000..50f39b6
+--- /dev/null
++++ b/IMDv3-dev.md
+@@ -0,0 +1,160 @@
++# IMD v3 developement
++
++The IMDv3-dev branch focuses on the developement of a new IMD protocol for sending additional information via IMD.
++Details of the protocol can be found [here](https://github.com/Becksteinlab/imdclient/blob/protocolv3/docs/source/protocol_v3.rst).
++
++## Instructions for compiling and building NAMD
++
++### Dependencies and requirements
++
++Building a complete NAMD binary from source code requires:
++
++- working C and C++ compilers;
++- a compiled version of the Charm++/Converse library;
++- a compiled version of the TCL library and its header files;
++- a compiled version of the FFTW library and its header files;
++- a C shell (csh/tcsh) to run the script used to configure the build.
++
++NAMD can be compiled without TCL or FFTW, but certain features will be
++disabled.  Fortunately, precompiled TCL and FFTW libraries are available from
++http://www.ks.uiuc.edu/Research/namd/libraries/.  You may disable
++these options by specifying --without-tcl --without-fftw as options
++when you run the config script.  Some files in arch may need editing
++to set the path to TCL and FFTW libraries correctly.
++
++### Building and Compiling Charm++
++
++As an example, here is the build sequence for 64-bit Linux workstations:
++
++Unpack NAMD and matching Charm++ source code:
++
++``` 
++    git clone https://github.com/amruthesht/namd-3.0.git
++    cd namd-3.0
++    tar xf charm-8.0.0.tar
++```
++
++Build and test the Charm++/Converse library (testing is optional)
++
++When using single-node multicore version:
++```
++    cd charm-8.0.0
++    ./build charm++ multicore-linux-x86_64 --with-production
++    cd multicore-linux-x86_64/tests/charm++/megatest
++    make
++    ./megatest +p4   (multicore does not support multiple nodes)
++    cd ../../../../..
++```
++
++When using InfiniBand UCX OpenMPI PMIx version:
++(Make sure modules and corresponding headers for openmpi and pmix are available and accessible before running this)
++```
++    cd charm-8.0.0
++    ./build charm++ ucx-linux-x86_64 ompipmix --with-production
++    cd ucx-linux-x86_64-ompipmix/tests/charm++/megatest
++    make
++    mpiexec -n 4 ./megatest
++    cd ../../../../..
++```
++
++When using MPI version:
++```
++    cd charm-8.0.0
++    env MPICXX=mpicxx ./build charm++ mpi-linux-x86_64 --with-production
++    cd mpi-linux-x86_64/tests/charm++/megatest
++    make pgm
++    mpiexec -n 4 ./megatest   (run as any other MPI program on your cluster)
++    cd ../../../../..
++```
++
++The `mpiexec` command is run as any other OpenMPI or MPI program on your cluster on an intercative node. Make sure to request appropriate resources for it.
++
++### Installing header-only dependencies
++
++Download and install TCL and FFTW libraries:
++  (cd to `namd-3.0` if you're not already there)
++```
++    wget http://www.ks.uiuc.edu/Research/namd/libraries/fftw-linux-x86_64.tar.gz
++    tar xzf fftw-linux-x86_64.tar.gz
++    mv linux-x86_64 fftw
++    wget http://www.ks.uiuc.edu/Research/namd/libraries/tcl8.6.13-linux-x86_64.tar.gz
++    wget http://www.ks.uiuc.edu/Research/namd/libraries/tcl8.6.13-linux-x86_64-threaded.tar.gz
++    tar xzf tcl8.6.13-linux-x86_64.tar.gz
++    tar xzf tcl8.6.13-linux-x86_64-threaded.tar.gz
++    mv tcl8.6.13-linux-x86_64 tcl
++    mv tcl8.6.13-linux-x86_64-threaded tcl-threaded
++```
++
++### Compiling and Building NAMD
++
++Set up build directory and compile for NAMD:
++multicore version:
++```
++  ./config Linux-x86_64-g++ --charm-arch multicore-linux-x86_64
++```
++InfiniBand UCX version:
++```
++  ./config Linux-x86_64-g++ --charm-arch ucx-linux-x86_64-ompipmix
++```
++MPI version:
++```
++  ./config Linux-x86_64-g++ --charm-arch mpi-linux-x86_64
++```
++GPU-resident CUDA multicore version:
++``` 
++  ./config Linux-x86_64-g++ --charm-arch multicore-linux-x86_64 --with-single-node-cuda
++```
++GPU-resident CUDA ethernet version:
++```
++  ./config Linux-x86_64-g++ --charm-arch netlrts-linux-x86_64 --with-single-node-cuda
++```
++GPU-resident HIP multicore version:
++```
++  ./config Linux-x86_64-g++ --charm-arch multicore-linux-x86_64 --with-single-node-hip
++```
++GPU-resident HIP ethernet version:
++```
++  ./config Linux-x86_64-g++ --charm-arch netlrts-linux-x86_64 --with-single-node-hip
++```
++
++You might also need `--cuda-prefix CUDA_DIRECTORY` for the GPU ones, if needed.
++
++Finally, `make` the namd source files to create an executable
++
++```
++  cd Linux-x86_64-g++
++  make  
++```
++
++## Input configuration options
++
++We have introduced new configuration settings in the input file `*.conf` in accordance with the protocol defined [here](https://github.com/Becksteinlab/imdclient/blob/protocolv3/docs/source/protocol_v3.rst). The following options and settings can be set in accordance with the user's need to stream data and trajectory information.
++
++#### General IMD options (same as v2)
++1. `IMDon` - streaming on or off (yes/no)
++2. `IMDport` - port number to listen on (typically 8888)
++3. `IMDfreq` - frequency to send data
++4. `IMDwait` - wait for client to connect before starting simulation (on/off)
++
++#### New IMD options (new in v3)
++5. `IMDversion` - 2 for VMD and 3 for latest protocol
++#### IMD session info settings (yes/no)
++6. `IMDsendPositions` - sending positions of entire system
++7. `IMDsendEnergies` - sending energies and bonded, non-bonded and other contributions
++8. `IMDsendTime` - sending time information (time, dt, step)
++9. `IMDsendBoxDimensions` - sending box dimensions (lattice vectors a, b, c). If box dimensions are not defined, default unit box is sent
++10. `IMDsendVelocities` - sending velocities of entire system
++11. `IMDsendForces` - sending forces on all atoms
++12. `IMDwrapPositions` - wrapping positions to box; applicable when IMDsendPositions is yes
++
++## Example Run
++
++Run an example simulation (this is a 66-atom simulation) and compare to the `-sample` output files (for seed 12345) in the dierctory:
++```
++  ./namd3 ../examples/alanin/shorter-run/alanin.conf
++```
++
++If running on a cluster with $N$ cores allocated for the job, one might have to run something like
++```
++  mpiexec -n N ./namd3 ../examples/alanin/shorter-run/alanin.conf
++```
+\ No newline at end of file
+diff --git a/examples/alanin/longer-run/alanin.conf b/examples/alanin/longer-run/alanin.conf
+new file mode 100644
+index 0000000..1a8e128
+--- /dev/null
++++ b/examples/alanin/longer-run/alanin.conf
+@@ -0,0 +1,28 @@
++# This is a test namd configuration file
++
++timestep	1.0	
++numsteps	100000
++structure	alanin.psf
++parameters	alanin.params
++coordinates	alanin.pdb
++exclude		scaled1-4
++1-4scaling	0.4
++outputname 	output
++margin		1.0
++stepspercycle   20
++temperature	300	
++
++langevin	on
++langevinDamping 5
++langevinHydrogen	no
++langevinTemp	300	
++
++switching 	on
++switchdist	7.0
++cutoff		8.0
++pairlistdist 	9.0
++
++IMDon		yes
++IMDport		2030
++IMDfreq		1
++IMDwait		on
+diff --git a/examples/alanin/longer-run/alanin.params b/examples/alanin/longer-run/alanin.params
+new file mode 100644
+index 0000000..1690deb
+--- /dev/null
++++ b/examples/alanin/longer-run/alanin.params
+@@ -0,0 +1,402 @@
++remark - parameter file PARAM19 -
++remark PEPTIDE GEOMETRY FROM RAMACHANDRAN ET AL BBA 359:298 (1974)
++remark TORSIONS FROM HAGLER ET AL JACS 98:4600 (1976)
++remark JORGENSEN NONBOND PARAMETERS JACS 103:3976-3985 WITH 1-4 RC=1.80/0.1
++
++set echo=false end
++!! - PEPTIDE GEOMETRY TO GIVE RAMACHANDRAN ET AL BBA 359:298 (1974)
++!! - PEPTIDE TORSIONS FROM HAGLER ET AL JACS 98:4600 (1976)
++!! - NONBONDED TERMS JORGENSEN JACS 103:3976 W/ RC1-4 = 1.80 EC1-4 = 0.1
++!!  The default h-bond exponents are now 6-repul 4-attr
++!! ++++++++ ATOMTYPE OS (IN METHYL ESTER) ADDED FOR CHARMM COURSE /LN ++++
++!! Switched from Slater-Kirkwood to simple mixing rules - AB
++!! Hbond parameters based on comparisons of dimer results with
++!!   ab initio calculations. - WER  12/19/84
++!! Grouping of atom types for VDW parameters - BRB 1/3/85
++
++
++bond C    C      450.0  1.38!  B. R. GELIN THESIS AMIDE AND DIPEPTIDES
++bond C    CH1E   405.0  1.52!  EXCEPT WHERE NOTED.  CH1E,CH2E,CH3E, AND CT
++bond C    CH2E   405.0  1.52!  ALL TREATED THE SAME. UREY BRADLEY TERMS ADDED
++bond C    CH3E   405.0  1.52
++bond C    CR1E   450.0  1.38
++bond C    CT     405.0  1.53
++bond C    N      471.0  1.33
++bond C    NC2    400.0  1.33!  BOND LENGTH FROM PARMFIX9 FORCE K APROXIMATE
++bond C    NH1    471.0  1.33
++bond C    NH2    471.0  1.33
++bond C    NP     471.0  1.33
++bond C    NR     471.0  1.33
++bond C    O      580.0  1.23
++bond C    OC     580.0  1.23!  FORCE DECREASE AND LENGTH INCREASE FROM C O
++bond C    OH1    450.0  1.38!  FROM PARMFIX9 (NO VALUE IN GELIN THESIS)
++bond C    OS     292.0  1.43!  FROM DEP NORMAL MODE FIT
++bond CH1E CH1E   225.0  1.53
++bond CH1E CH2E   225.0  1.52
++bond CH1E CH3E   225.0  1.52
++bond CH1E N      422.0  1.45
++bond CH1E NH1    422.0  1.45
++bond CH1E NH2    422.0  1.45
++bond CH1E NH3    422.0  1.45
++bond CH1E OH1    400.0  1.42!  FROM PARMFIX9 (NO VALUE IN GELIN THESIS)
++bond CH2E CH2E   225.0  1.52
++bond CH2E CH3E   225.0  1.54
++bond CH2E CR1E   250.0  1.45!  FROM WARSHEL AND KARPLUS 1972 JACS 96:5612
++bond CH2E N      422.0  1.45
++bond CH2E NH1    422.0  1.45
++bond CH2E NH2    422.0  1.45
++bond CH2E NH3    422.0  1.45
++bond CH2E OH1    400.0  1.42
++bond CH2E S      450.0  1.81!  FROM PARMFIX9
++bond CH2E SH1E   450.0  1.81
++bond CH3E NH1    422.0  1.49
++bond CH3E NR     422.0  1.49 ! FOR NETROPSIN
++bond CH3E S      450.0  1.77!  FROM PARMFIX9
++bond CH3E OS     292.0  1.38!  FROM DEP NORMAL MODE FIT
++bond CM   OM    1115.0  1.128!  FROM CAUGHEY ET AL(1978),CARBON MONOXIDE
++bond CR1E CR1E   450.0  1.38
++bond CR1E NH1    450.0  1.305
++bond CR1E NR     450.0  1.305
++bond CT   CT     200.0  1.53
++bond CT   N      422.0  1.45
++bond CT   NC2    422.0  1.45
++bond CT   NH1    422.0  1.45
++bond CT   NH2    422.0  1.45
++bond CT   NH3    422.0  1.45
++bond CT   OH1    400.0  1.42
++bond CT   S      450.0  1.81
++!bond FE   CM     258.0  1.79!   FROM KROEKER ET AL(JCP:72:4846)
++!bond FE   NP     500.0  2.09
++!bond FE   NR      65.0  1.98!   FROM NAGAI ET AL(1980)
++!bond FE   OM     250.0  1.8!    JUST A GUESS.
++bond H    NH1    405.0  0.98!  GELIN AND IR STRETCH 3200 CM 1
++bond H    NH2    405.0  0.98
++bond H    OH1    450.0  0.96!  FROM IR STRETCH 3400 CM 1
++bond HA   C      350.0  1.08
++bond HA   CT     300.0  1.08
++bond HC   NC2    405.0  1.00
++bond HC   NH1    405.0  0.98
++bond HC   NH3    405.0  1.04
++bond OC   S      400.0  1.43
++bond OM   OM     600.0  1.23!   STRETCHING CONSTANT JUST A GUESS.
++bond S    S      500.0  2.02
++
++
++angle C    C    C       70.0 106.5!  FROM B. R. GELIN THESIS WITH HARMONIC
++angle C    C    CH2E    65.0 126.5!  PART OF F TERMS INCORPORATED. ATOMS
++angle C    C    CH3E    65.0 126.5!  WITH EXTENDED H COMPENSATED FOR LACK
++angle C    C    CR1E    70.0 122.5!  OF H ANGLES.
++angle C    C    CT      70.0 126.5
++angle C    C    HA      40.0 120.0!  AMIDE PARAMETERS FIT BY LEAST SQUARES
++angle C    C    NH1     65.0 109.0!  TO N-METHYL ACETAMIDE VIBRATIONS.
++angle C    C    NP      65.0 112.5!  MINIMIZATION OF N-METHYL ACETAMIDE.
++angle C    C    NR      65.0 112.5
++angle C    C    OH1     65.0 119.0
++angle C    C    O       65.0 119.0 ! FOR NETROPSIN
++angle CH1E C    N       20.0 117.5
++angle CH1E C    NH1     20.0 117.5
++angle CH1E C    O       85.0 121.5
++angle CH1E C    OC      85.0 117.5
++angle CH1E C    OH1     85.0 120.0
++angle CH2E C    CR1E    70.0 121.5
++angle CH2E C    N       20.0 117.5
++angle CH2E C    NH1     20.0 117.5
++angle CH2E C    NH2     20.0 117.5
++angle CH2E C    NC2     20.0 117.5 ! FOR NETROPSIN
++angle CH2E C    NR      60.0 116.0
++angle CH2E C    O       85.0 121.6
++angle CH2E C    OC      85.0 118.5
++angle CH2E C    OH1     85.0 120.0
++angle CH3E C    N       20.0 117.5
++angle CH3E C    NH1     20.0 117.5
++angle CH3E C    O       85.0 121.5
++angle CR1E C    CR1E    65.0 120.5
++angle CR1E C    NH1     65.0 110.5! USED ONLY IN HIS, NOT IT TRP
++angle CR1E C    NP      65.0 122.5
++angle CR1E C    NR      65.0 122.5
++angle CR1E C    OH1     65.0 119.0
++angle CT   C    N       20.0 117.5
++angle CT   C    NH1     20.0 117.5
++angle CT   C    NH2     20.0 117.5
++angle CT   C    O       85.0 121.5
++angle CT   C    OC      85.0 118.5
++angle CT   C    OH1     85.0 120.0
++angle HA   C    NH1     40.0 120.0
++angle HA   C    NH2     40.0 120.0
++angle HA   C    NR      40.0 120.0
++angle HA   C    O       85.0 121.5
++angle N    C    O       85.0 121.0
++angle NC2  C    NC2     70.0 120.0
++angle NC2  C    NH1     70.0 120.0
++angle NH1  C    NR      70.0 120.0
++angle NH1  C    O       65.0 121.0
++angle NH2  C    O       65.0 121.0
++angle O    C    OH1     85.0 120.0
++angle OC   C    OC      85.0 122.5
++angle OS   C    CH1E    70.0 125.3! FROM PARDNA10
++angle OS   C    CH2E    70.0 125.3!   - " -
++angle OS   C    O       70.0 120.0!   - " -
++angle C    CH1E CH1E    70.0 110.0
++angle C    CH1E CH2E    70.0 109.5
++angle C    CH1E CH3E    70.0 106.5
++angle C    CH1E N       45.0 111.6
++angle C    CH1E NH1     45.0 111.6
++angle C    CH1E NH2     45.0 111.6
++angle C    CH1E NH3     45.0 111.6
++angle CH1E CH1E CH2E    45.0 112.5
++angle CH1E CH1E CH3E    45.0 111.0
++angle CH1E CH1E NH1     50.0 110.0
++angle CH1E CH1E NH2     50.0 109.5
++angle CH1E CH1E NH3     50.0 107.5
++angle CH1E CH1E OH1     50.0 104.5
++angle CH2E CH1E CH3E    50.0 111.5
++angle CH2E CH1E N       65.0 104.0
++angle CH2E CH1E NH1     65.0 110.0
++angle CH2E CH1E NH2     65.0 110.0
++angle CH2E CH1E NH3     65.0 110.0
++angle CH3E CH1E CH3E    50.0 111.0
++angle CH3E CH1E NH1     65.0 108.5
++angle CH3E CH1E NH2     65.0 109.5
++angle CH3E CH1E NH3     65.0 109.5
++angle CH3E CH1E OH1     60.0 110.5
++angle C    CH2E CH1E    70.0 112.5
++angle C    CH2E CH2E    70.0 113.0
++angle C    CH2E NH1     70.0 111.6
++angle C    CH2E NH2     70.0 111.6
++angle C    CH2E NH3     70.0 111.6
++angle CH1E CH2E CH1E    45.0 117.0
++angle CH1E CH2E CH2E    45.0 112.5
++angle CH1E CH2E CH3E    45.0 113.0
++angle CH1E CH2E OH1     45.0 111.0
++angle CH3E CH2E OH1     45.0 111.0
++angle CH1E CH2E S       50.0 112.5
++angle CH1E CH2E SH1E    50.0 112.5
++angle CH2E CH2E CH2E    45.0 110.0
++angle CH2E CH2E CH3E    45.0 111.0
++angle CH2E CH2E N       65.0 105.0
++angle CH2E CH2E NH1     65.0 111.0
++angle CH2E CH2E NH2     65.0 109.5
++angle CH2E CH2E NH3     65.0 110.5
++angle CH2E CH2E S       50.0 112.5
++angle C    CR1E C       90.0 126.5
++angle C    CR1E CH2E    90.0 122.0
++angle C    CR1E CR1E    90.0 119.0
++angle C    CR1E NH1     90.0 109.5
++angle C    CR1E NR      90.0 106.5
++angle CR1E CR1E CR1E    90.0 120.5
++angle NH1  CR1E NH1     70.0 109.0
++angle NH1  CR1E NR      70.0 109.0
++angle C    CT   CT      70.0 109.5
++angle C    CT   HA      70.0 109.5
++angle C    CT   N       70.0 111.6
++angle C    CT   NH1     70.0 111.6
++angle C    CT   NH2     70.0 111.6
++angle C    CT   NH3     70.0 111.6
++angle CT   CT   CT      45.0 111.00
++angle CT   CT   HA      40.0 109.50
++angle CT   CT   N       65.0 105.00
++angle CT   CT   NC2     65.0 110.00
++angle CT   CT   NH1     65.0 110.00
++angle CT   CT   NH2     65.0 110.00
++angle CT   CT   NH3     65.0 110.00
++angle CT   CT   OH1     50.0 109.50
++angle CT   CT   S       50.0 112.50
++angle HA   CT   HA      40.0 109.5
++angle HA   CT   N       50.0 109.5
++angle HA   CT   NC2     50.0 109.5
++angle HA   CT   NH1     50.0 109.5
++angle HA   CT   NH3     50.0 109.5
++angle HA   CT   OH1     50.0 109.5
++angle HA   CT   S       40.0 109.5
++!angle FE   CM   OM       5.0  90.0!       FROM KROEKER ET AL(1980)
++angle C    N    CH1E    80.0 120.0
++angle C    N    CH2E    80.0 120.0
++angle C    N    CT      80.0 120.0
++angle CH1E N    CH2E    60.0 110.0
++angle CH1E N    CH3E    60.0 110.0
++angle CH2E N    CH3E    60.0 109.5
++angle CT   N    CT      60.0 110.0
++angle C    NC2  CT      80.0 120.0
++angle C    NC2  HC      35.0 120.0
++angle CT   NC2  HC      35.0 120.0
++angle HC   NC2  HC      40.0 120.0
++angle C    NH1  C       60.0 102.5  ! UNUSED (AND PROBABLY WRONG)
++angle C    NH1  CH1E    77.5 120.0
++angle C    NH1  CH2E    77.5 120.0
++angle C    NH1  CH3E    77.5 120.0
++angle C    NH1  CR1E    60.0 108.0
++angle C    NH1  CT      80.0 120.0
++angle C    NH1  H       30.0 120.0
++angle CH1E NH1  CH3E    60.0 120.0
++angle CH1E NH1  H       35.0 120.0
++angle CH2E NH1  CH3E    60.0 120.0
++angle CH2E NH1  H       35.0 120.0
++angle CH3E NH1  H       35.0 120.0
++angle CR1E NH1  CR1E    65.0 110.0
++angle CR1E NH1  H       35.0 120.0
++angle CT   NH1  H       35.0 120.0
++angle C    NH2  H       30.0 120.0
++angle CH1E NH2  CH2E    60.0 120.0
++angle CH1E NH2  H       35.0 120.0
++angle CH2E NH2  H       35.0 120.0
++angle CT   NH2  H       35.0 120.0
++angle H    NH2  H       40.0 125.0
++angle C    NP   C       70.0 102.5
++!angle C    NP   FE      50.0 128.0!  FORCE CONSTANT FROM PARMFIX9
++angle C    NR   C       70.0 102.5
++angle C    NR   CR1E    70.0 109.5
++angle CH3E NR   CR1E    70.0 109.5 ! FOR NETROPSIN
++angle CH3E NR   C       70.0 109.5 ! FOR NETROPSIN
++angle CR1E NR   CR1E    65.0 110.0
++!angle CR1E NR   FE      30.0 124.8!  FORCE CONSTANT FROM PARMFIX9
++angle CH1E NH3  HC      35.0 109.5
++angle CH1E NH3  CH2E    35.0 109.5
++angle CH2E NH3  HC      35.0 109.5
++angle CT   NH3  HC      35.0 109.5
++angle HC   NH3  HC      40.0 109.5
++angle C    OH1  H       50.0 109.5
++angle CH1E OH1  H       35.0 109.5
++angle CH2E OH1  H       35.0 109.5
++angle CT   OH1  H       35.0 109.5
++!angle FE   OM   OM       0.0 180.0!  DUMMY PARAMETER FOR PATCH AND ANALYSIS.
++angle C    OS   CH3E    46.5 120.5!   FROM PARDNA10
++angle CH2E S    CH3E    50.0  99.5! FROM PARMFIX9, CHECK WITH IR
++angle CH2E S    S       50.0 104.2
++angle CT   S    CT      50.0  99.5!  FORCE CONSTANTS FROM PARMFIX9
++angle CT   S    S       50.0 104.2
++angle OC   S    OC      85.0 109.5! FORCE CONSTANT JST A GUESS.
++!angle NP   FE   CM      5.0   90.0
++!angle NP   FE   NP      50.0  90.0
++!angle NP   FE   NR      5.0  115.0
++!angle NP   FE   OM      5.0   90.0! JUST A GUESS FROM EXISTING FE CM DATA
++!angle NR   FE   CM      5.0      180.0
++!angle NR   FE   OM      5.0  180.0! JUST A GUESS FROM EXISTING FE CM DATA
++
++
++dihe CH1E C    N    CH1E 10.0      2     180.0! PRO ISOM. BARRIER 20 KCAL/MOL.
++dihe CH2E C    N    CH1E 10.0       2     180.0
++dihe CR1E C    C    CR1E 5.0       2     180.0! => TRP OOP. VIB 170CM 1
++dihe CR1E C    C    C    2.5       2     180.0! SEE BEHLEN ET AL JCP 75:5685 81
++dihe CR1E C    C    NH1  2.5       2     180.0
++dihe X    C    CH1E X    0.0       3       0.0! FROM GELIN THESIS AMIDES
++dihe X    C    CH2E X    0.0       3       0.0! USING A SINGLE
++dihe X    C    CR1E X   10.0       2     180.0! DIHEDRAL PER BOND RATHER
++dihe X    C    CT   X    0.0       3       0.0! THAN MULTIPLE TORSIONS.
++dihe X    C    N    X    8.2       2     180.0! ALKANE TORSION REDUCED TO
++dihe X    C    NC2  X    8.2       2     180.0! 1.6 FROM 1.8 TO COINCIDE WITH
++dihe X    C    NH1  X    8.2       2     180.0! THE EXPERIMENTAL BARRIER.
++dihe X    C    NH2  X    8.2       2     180.0
++dihe X    C    OH1  X    1.8       2     180.0
++dihe X    C    OS   X    1.8       2     180.0 ! INFERRED FROM C-OH1
++dihe X    CH1E CH1E X    1.6       3       0.0
++dihe X    CH1E CH2E X    1.6       3       0.0
++dihe X    CH1E N    X    0.3       3       0.0! FROM HAGLER ET AL TABULATION OF
++dihe X    CH1E NH1  X    0.3       3       0.0! EXP. DATA AND 6 31G CALC.
++dihe X    CH1E NH2  X    1.8       3       0.0! PROTONATED SECONDARY AMINE
++dihe X    CH1E NH3  X    0.6       3       0.0! 1/PROTON SO 3 FOR THE BOND
++dihe X    CH1E OH1  X    0.5       3       0.0! CHANGED TO ROUGHLY MEOH
++dihe X    CH2E CH2E X    1.6       3       0.0
++dihe X    CH2E N    X    0.3       3       0.0! SEE CH1E COMMENTS
++dihe X    CH2E NH1  X    0.3       3       0.0
++dihe X    CH2E NH2  X    0.6       3       0.0
++dihe X    CH2E NH3  X    0.6       3       0.0
++dihe X    CH2E OH1  X    0.5       3       0.0
++dihe X    CH2E S    X    1.2       2       0.0
++dihe X    CT   CT   X    1.6       3       0.0
++dihe X    CT   N    X    0.3       3       0.0! SEE CH1E COMMENTS
++dihe X    CT   NC2  X    0.3       3       0.0
++dihe X    CT   NH1  X    0.3       3       0.0
++dihe X    CT   NH2  X    0.6       3       0.0
++dihe X    CT   NH3  X    0.6       3       0.0
++dihe X    CT   OH1  X    0.5       3       0.0
++dihe X    CT   S    X    1.2       2       0.0
++!dihe X    FE   NR   X    0.05      4       0.0
++!dihe X    FE   CM   X    0.05      4       0.0
++!dihe X    FE   OM   X    0.00      4       0.0
++dihe X    S    S    X    4.0       2       0.0! FROM EXP.R BARRI
++
++
++impr C    C    CR1E CH2E  90.0    0   0.0!GIVE 220 CM 1 METHYL OOP FOR TOLUENE.
++impr C    CR1E C    CH2E  90.0    0   0.0!USED HERE FOR TRP CG OUT OF PLANE
++impr C    CR1E CR1E CH2E  90.0    0   0.0!               PHE, AND TYR CG OOP
++impr C    CR1E NH1  CH2E  90.0    0   0.0!               HIS CG RING OOP
++impr C    NH1  CR1E CH2E  90.0    0   0.0!
++impr C    CR1E CR1E OH1  150.0    0   0.0! GIVE 249 CM 1 PHENOL OH OOP.
++impr C    H    H    NH2   45.0    0   0.0! PRIMARY AMIDES (ASN AND GLN) OOP
++impr C    OC   OC   CH1E 100.0    0   0.0! CARBOXYL OUT OF PLANE.
++impr C    OC   OC   CH2E 100.0    0   0.0!
++impr C    X    X    C     25.0    0   0.0! FROM BENZENE NORMAL MODE ANALYSIS
++impr C    X    X    CH2E  90.0    0   0.0! FROM TOLUENE METHYL OOP. 217 CM 1
++impr C    X    X    CH3E  90.0    0   0.0
++impr C    X    X    CR1E  25.0    0   0.0
++impr C    X    X    H     75.0    0   0.0! FROM BENZENE NORMAL MODE ANALYSIS
++impr C    X    X    HA    75.0    0   0.0!
++impr C    X    X    NH1  100.0    0   0.0! AMIDES FIT TO N METHYL ACETAMIDE.
++impr C    X    X    O    100.0    0   0.0
++impr C    X    X    OC   100.0    0   0.0
++impr C    X    X    OH1  150.0    0   0.0! USED FOR TYR HYDROXYL OOP
++impr CH1E X    X    CH1E  55.0    0 35.26439! CALCULATED TO  BE THE SAME AS THE 3
++impr CH1E X    X    CH2E  55.0    0 35.26439! H CH1E X ANGLES WITH K=40
++impr CH1E X    X    CH3E  55.0    0 35.26439
++impr CR1E X    X    CR1E  25.0    0   0.0! EXTENDED ATOM VERSION OF BENZENE
++impr CR1E X    X    NH1   25.0    0   0.0! SAME AS ABOVE FOR LACK OF VALUES
++!impr FE   X    X    NP    20.0    0   0.0! FROM PARMFIX9
++impr H    X    X    O     45.0    0   0.0
++impr N    CH1E CH2E C     45.0    0   0.0! PROLINE NITROGENS
++impr N    X    X    CH2E  45.0    0   0.0
++impr N    X    X    CT    45.0    0   0.0
++impr NC2  X    X    CT    45.0    0   0.0
++impr NC2  X    X    HC    45.0    0   0.0
++impr NH1  X    X    CH1E  45.0    0   0.0
++impr NH1  X    X    CH2E  45.0    0   0.0
++impr NH1  X    X    CH3E  45.0    0   0.0
++impr NH1  X    X    CT    45.0    0   0.0
++impr NH1  X    X    H     45.0    0   0.0! AMIDES PROTON OOP
++impr NH1  X    X    NH1   25.0    0   0.0! 
++impr NH1  X    X    NR    25.0    0   0.0
++impr NH2  X    X    H     45.0    0   0.0
++impr NR   X    X    C     25.0    0   0.0
++impr NR   X    X    CR1E  25.0    0   0.0
++impr NR   X    X    CT    25.0    0   0.0
++impr NR   X    X    CH3E  25.0    0   0.0 ! FOR NETROPSIN
++
++
++
++{* nonbonding parameter section *}
++{* ============================ *}
++
++ !                  eps     sigma       eps(1:4) sigma(1:4)
++ !                  (kcal/mol) (A)
++ !                  ---------------------------------------
++ NONBonded  H       0.0498   1.4254      0.0498   1.4254
++ NONBonded  HA      0.0450   2.6157      0.0450   2.6157 !- charged group.
++ NONBonded  HC      0.0498   1.0691      0.0498   1.0691 !   Reduced vdw radius
++ !
++ NONBonded  C       0.1200   3.7418      0.1000   3.3854 ! carbonyl carbon
++ NONBonded  CH1E    0.0486   4.2140      0.1000   3.3854 ! \
++ NONBonded  CH2E    0.1142   3.9823      0.1000   3.3854 !  extended carbons
++ NONBonded  CH3E    0.1811   3.8576      0.1000   3.3854 ! /
++!! NONBonded  CM      0.0262   4.4367      0.1000   3.3854 
++ NONBonded  CR1E    0.1200   3.7418      0.1000   3.3854 !  ring carbons
++!! NONBonded  CT      0.0262   4.4367      0.1000   3.3854
++ !
++ NONBonded  N       0.2384   2.8509      0.2384   2.8509
++ NONBonded  NC2     0.2384   2.8509      0.2384   2.8509
++ NONBonded  NH1     0.2384   2.8509      0.2384   2.8509
++ NONBonded  NH2     0.2384   2.8509      0.2384   2.8509
++ NONBonded  NH3     0.2384   2.8509      0.2384   2.8509
++ NONBonded  NP      0.2384   2.8509      0.2384   2.8509
++ NONBonded  NR      0.2384   2.8509      0.2384   2.8509
++ !
++ NONBonded  O       0.1591   2.8509      0.1591   2.8509
++ NONBonded  OC      0.6469   2.8509      0.6469   2.8509
++ NONBonded  OH1     0.1591   2.8509      0.1591   2.8509
++!! NONBonded  OM      0.1591   2.8509      0.1591   2.8509
++ NONBonded  OS      0.1591   2.8509      0.1591   2.8509
++ !
++ NONBonded  S       0.0430   3.3676      0.0430   3.3676
++ NONBonded  SH1E    0.0430   3.3676      0.0430   3.3676
++ !
++!! NONBONDED FE        0.0000    1.1582      0.0000 1.1582
++
++set echo=true end
+diff --git a/examples/alanin/longer-run/alanin.pdb b/examples/alanin/longer-run/alanin.pdb
+new file mode 100644
+index 0000000..8403a01
+--- /dev/null
++++ b/examples/alanin/longer-run/alanin.pdb
+@@ -0,0 +1,77 @@
++REMARK FILENAME="/usr/people/nonella/xplor/benchmark1/ALANIN.PDB"
++REMARK PARAM11.PRO ( from PARAM6A )
++REMARK ===========
++REMARK PROTEIN PARAMETERS:
++REMARK PEPTIDE GEOMETRY FROM RAMACHANDRAN ET AL BBA 359:298 (1974)
++REMARK TORSIONS FROM HAGLER ET AL JACS 98:4600 (1976)
++REMARK LENNARD-JONES NONBONDED PARAMETERS WITH SPECIAL TREATMENT OF 1:4
++REMARK CARBON-CARBON INTERACTIONS: JORGENSON ET. AL.
++REMARK                           JACS 103:3976-3985 WITH 1-4 RC=1.80/0.1
++REMARK DATE:16-Feb-89  11:21:32       created by user: nonella
++ATOM      1  CA  ACE     1      -2.184   0.591   0.910  1.00  7.00      MAIN
++ATOM      2  C   ACE     1      -0.665   0.627   0.966  1.00  0.00      MAIN
++ATOM      3  O   ACE     1      -0.069   1.213   1.868  1.00  0.00      MAIN
++ATOM      4  N   ALA     2       0.000   0.000   0.000  1.00  3.00      MAIN
++ATOM      5  H   ALA     2      -0.490  -0.462  -0.712  1.00  0.00      MAIN
++ATOM      6  CA  ALA     2       1.450   0.000   0.000  1.00  7.00      MAIN
++ATOM      7  CB  ALA     2       1.969  -0.670  -1.262  1.00  0.00      MAIN
++ATOM      8  C   ALA     2       2.010   1.413   0.000  1.00  0.00      MAIN
++ATOM      9  O   ALA     2       2.911   1.748   0.767  1.00  1.00      MAIN
++ATOM     10  N   ALA     3       1.488   2.280  -0.863  1.00  0.00      MAIN
++ATOM     11  H   ALA     3       0.770   1.998  -1.467  1.00  4.00      MAIN
++ATOM     12  CA  ALA     3       1.981   3.643  -0.909  1.00  7.00      MAIN
++ATOM     13  CB  ALA     3       1.147   4.464  -1.880  1.00  0.00      MAIN
++ATOM     14  C   ALA     3       1.865   4.326   0.444  1.00  0.00      MAIN
++ATOM     15  O   ALA     3       2.801   4.963   0.924  1.00  0.00      MAIN
++ATOM     16  N   ALA     4       0.710   4.211   1.093  1.00  9.00      MAIN
++ATOM     17  H   ALA     4      -0.026   3.700   0.697  1.00  0.00      MAIN
++ATOM     18  CA  ALA     4       0.541   4.841   2.388  1.00  7.00      MAIN
++ATOM     19  CB  ALA     4      -0.809   4.462   2.976  1.00  8.00      MAIN
++ATOM     20  C   ALA     4       1.591   4.371   3.381  1.00  0.00      MAIN
++ATOM     21  O   ALA     4       2.212   5.167   4.085  1.00  0.00      MAIN
++ATOM     22  N   ALA     5       1.818   3.063   3.463  1.00  0.00      MAIN
++ATOM     23  H   ALA     5       1.315   2.443   2.895  1.00  0.00      MAIN
++ATOM     24  CA  ALA     5       2.809   2.556   4.392  1.00  7.00      MAIN
++ATOM     25  CB  ALA     5       2.970   1.055   4.209  1.00  0.00      MAIN
++ATOM     26  C   ALA     5       4.176   3.170   4.142  1.00  0.00      MAIN
++ATOM     27  O   ALA     5       4.859   3.615   5.064  1.00  0.00      MAIN
++ATOM     28  N   ALA     6       4.611   3.212   2.886  1.00  0.00      MAIN
++ATOM     29  H   ALA     6       4.055   2.853   2.163  1.00  0.00      MAIN
++ATOM     30  CA  ALA     6       5.908   3.786   2.586  1.00  7.00      MAIN
++ATOM     31  CB  ALA     6       6.121   3.830   1.082  1.00  0.00      MAIN
++ATOM     32  C   ALA     6       6.012   5.221   3.079  1.00  0.00      MAIN
++ATOM     33  O   ALA     6       6.992   5.614   3.710  1.00  0.00      MAIN
++ATOM     34  N   ALA     7       5.002   6.040   2.802  1.00  0.00      MAIN
++ATOM     35  H   ALA     7       4.228   5.711   2.297  1.00  0.00      MAIN
++ATOM     36  CA  ALA     7       5.044   7.419   3.245  1.00  7.00      MAIN
++ATOM     37  CB  ALA     7       3.730   8.110   2.918  1.00  0.00      MAIN
++ATOM     38  C   ALA     7       5.219   7.518   4.752  1.00  0.00      MAIN
++ATOM     39  O   ALA     7       6.045   8.278   5.255  1.00  0.00      MAIN
++ATOM     40  N   ALA     8       4.445   6.748   5.512  1.00  0.00      MAIN
++ATOM     41  H   ALA     8       3.792   6.148   5.096  1.00  0.00      MAIN
++ATOM     42  CA  ALA     8       4.566   6.799   6.956  1.00  7.00      MAIN
++ATOM     43  CB  ALA     8       3.670   5.747   7.589  1.00  0.00      MAIN
++ATOM     44  C   ALA     8       5.984   6.488   7.409  1.00  0.00      MAIN
++ATOM     45  O   ALA     8       6.560   7.186   8.241  1.00  0.00      MAIN
++ATOM     46  N   ALA     9       6.582   5.429   6.871  1.00  0.00      MAIN
++ATOM     47  H   ALA     9       6.109   4.882   6.209  1.00  0.00      MAIN
++ATOM     48  CA  ALA     9       7.934   5.082   7.264  1.00  7.00      MAIN
++ATOM     49  CB  ALA     9       8.436   3.918   6.425  1.00  0.00      MAIN
++ATOM     50  C   ALA     9       8.898   6.233   7.027  1.00  0.00      MAIN
++ATOM     51  O   ALA     9       9.705   6.584   7.887  1.00  0.00      MAIN
++ATOM     52  N   ALA    10       8.839   6.851   5.851  1.00  0.00      MAIN
++ATOM     53  H   ALA    10       8.190   6.560   5.176  1.00  0.00      MAIN
++ATOM     54  CA  ALA    10       9.733   7.956   5.567  1.00  7.00      MAIN
++ATOM     55  CB  ALA    10       9.388   8.570   4.219  1.00  0.00      MAIN
++ATOM     56  C   ALA    10       9.595   9.067   6.595  1.00  0.00      MAIN
++ATOM     57  O   ALA    10      10.580   9.587   7.117  1.00  0.00      MAIN
++ATOM     58  N   ALA    11       8.364   9.460   6.912  1.00  0.00      MAIN
++ATOM     59  H   ALA    11       7.590   9.036   6.488  1.00  0.00      MAIN
++ATOM     60  CA  ALA    11       8.169  10.516   7.887  1.00  7.00      MAIN
++ATOM     61  CB  ALA    11       6.686  10.695   8.168  1.00  0.00      MAIN
++ATOM     62  C   ALA    11       8.823  10.177   9.217  1.00  0.00      MAIN
++ATOM     63  O   ALA    11       9.523  10.992   9.815  1.00  0.00      MAIN
++ATOM     64  N   CBX    12       8.610   8.962   9.714  1.00  0.00      MAIN
++ATOM     65  H   CBX    12       8.050   8.324   9.225  1.00  0.00      MAIN
++ATOM     66  CA  CBX    12       9.223   8.571  11.014  1.00  0.00      MAIN
++END
+diff --git a/examples/alanin/longer-run/alanin.psf b/examples/alanin/longer-run/alanin.psf
+new file mode 100644
+index 0000000..7587766
+--- /dev/null
++++ b/examples/alanin/longer-run/alanin.psf
+@@ -0,0 +1,206 @@
++PSF 
++
++      11 !NTITLE
++ REMARKS FILENAME="/usr/people/nonella/xplor/benchmark1/ALANIN.PSF"             
++ REMARKS PARAM11.PRO ( from PARAM6A )                                           
++ REMARKS ===========                                                            
++ REMARKS PROTEIN PARAMETERS:                                                    
++ REMARKS PEPTIDE GEOMETRY FROM RAMACHANDRAN ET AL BBA 359:298 (1974)            
++ REMARKS TORSIONS FROM HAGLER ET AL JACS 98:4600 (1976)                         
++ REMARKS LENNARD-JONES NONBONDED PARAMETERS WITH SPECIAL TREATMENT OF 1:4       
++ REMARKS CARBON-CARBON INTERACTIONS: JORGENSON ET. AL.                          
++ REMARKS                           JACS 103:3976-3985 WITH 1-4 RC=1.80/0.1      
++ REMARKS                                                                        
++ REMARKS DATE:16-Feb-89  11:21:29       created by user: nonella                
++
++      66 !NATOM
++       1 MAIN 1    ACE  CA   CH3E   0.000000E+00   15.0350           0
++       2 MAIN 1    ACE  C    C      0.450000       12.0110           0
++       3 MAIN 1    ACE  O    O     -0.450000       15.9994           0
++       4 MAIN 2    ALA  N    NH1   -0.350000       14.0067           0
++       5 MAIN 2    ALA  H    H      0.250000       1.00800           0
++       6 MAIN 2    ALA  CA   CH1E   0.100000       13.0190           0
++       7 MAIN 2    ALA  CB   CH3E   0.000000E+00   15.0350           0
++       8 MAIN 2    ALA  C    C      0.450000       12.0110           0
++       9 MAIN 2    ALA  O    O     -0.450000       15.9994           0
++      10 MAIN 3    ALA  N    NH1   -0.350000       14.0067           0
++      11 MAIN 3    ALA  H    H      0.250000       1.00800           0
++      12 MAIN 3    ALA  CA   CH1E   0.100000       13.0190           0
++      13 MAIN 3    ALA  CB   CH3E   0.000000E+00   15.0350           0
++      14 MAIN 3    ALA  C    C      0.450000       12.0110           0
++      15 MAIN 3    ALA  O    O     -0.450000       15.9994           0
++      16 MAIN 4    ALA  N    NH1   -0.350000       14.0067           0
++      17 MAIN 4    ALA  H    H      0.250000       1.00800           0
++      18 MAIN 4    ALA  CA   CH1E   0.100000       13.0190           0
++      19 MAIN 4    ALA  CB   CH3E   0.000000E+00   15.0350           0
++      20 MAIN 4    ALA  C    C      0.450000       12.0110           0
++      21 MAIN 4    ALA  O    O     -0.450000       15.9994           0
++      22 MAIN 5    ALA  N    NH1   -0.350000       14.0067           0
++      23 MAIN 5    ALA  H    H      0.250000       1.00800           0
++      24 MAIN 5    ALA  CA   CH1E   0.100000       13.0190           0
++      25 MAIN 5    ALA  CB   CH3E   0.000000E+00   15.0350           0
++      26 MAIN 5    ALA  C    C      0.450000       12.0110           0
++      27 MAIN 5    ALA  O    O     -0.450000       15.9994           0
++      28 MAIN 6    ALA  N    NH1   -0.350000       14.0067           0
++      29 MAIN 6    ALA  H    H      0.250000       1.00800           0
++      30 MAIN 6    ALA  CA   CH1E   0.100000       13.0190           0
++      31 MAIN 6    ALA  CB   CH3E   0.000000E+00   15.0350           0
++      32 MAIN 6    ALA  C    C      0.450000       12.0110           0
++      33 MAIN 6    ALA  O    O     -0.450000       15.9994           0
++      34 MAIN 7    ALA  N    NH1   -0.350000       14.0067           0
++      35 MAIN 7    ALA  H    H      0.250000       1.00800           0
++      36 MAIN 7    ALA  CA   CH1E   0.100000       13.0190           0
++      37 MAIN 7    ALA  CB   CH3E   0.000000E+00   15.0350           0
++      38 MAIN 7    ALA  C    C      0.450000       12.0110           0
++      39 MAIN 7    ALA  O    O     -0.450000       15.9994           0
++      40 MAIN 8    ALA  N    NH1   -0.350000       14.0067           0
++      41 MAIN 8    ALA  H    H      0.250000       1.00800           0
++      42 MAIN 8    ALA  CA   CH1E   0.100000       13.0190           0
++      43 MAIN 8    ALA  CB   CH3E   0.000000E+00   15.0350           0
++      44 MAIN 8    ALA  C    C      0.450000       12.0110           0
++      45 MAIN 8    ALA  O    O     -0.450000       15.9994           0
++      46 MAIN 9    ALA  N    NH1   -0.350000       14.0067           0
++      47 MAIN 9    ALA  H    H      0.250000       1.00800           0
++      48 MAIN 9    ALA  CA   CH1E   0.100000       13.0190           0
++      49 MAIN 9    ALA  CB   CH3E   0.000000E+00   15.0350           0
++      50 MAIN 9    ALA  C    C      0.450000       12.0110           0
++      51 MAIN 9    ALA  O    O     -0.450000       15.9994           0
++      52 MAIN 10   ALA  N    NH1   -0.350000       14.0067           0
++      53 MAIN 10   ALA  H    H      0.250000       1.00800           0
++      54 MAIN 10   ALA  CA   CH1E   0.100000       13.0190           0
++      55 MAIN 10   ALA  CB   CH3E   0.000000E+00   15.0350           0
++      56 MAIN 10   ALA  C    C      0.450000       12.0110           0
++      57 MAIN 10   ALA  O    O     -0.450000       15.9994           0
++      58 MAIN 11   ALA  N    NH1   -0.350000       14.0067           0
++      59 MAIN 11   ALA  H    H      0.250000       1.00800           0
++      60 MAIN 11   ALA  CA   CH1E   0.100000       13.0190           0
++      61 MAIN 11   ALA  CB   CH3E   0.000000E+00   15.0350           0
++      62 MAIN 11   ALA  C    C      0.450000       12.0110           0
++      63 MAIN 11   ALA  O    O     -0.450000       15.9994           0
++      64 MAIN 12   CBX  N    NH1   -0.350000       14.0067           0
++      65 MAIN 12   CBX  H    H      0.250000       1.00800           0
++      66 MAIN 12   CBX  CA   CH3E   0.100000       15.0350           0
++
++      65 !NBOND: bonds
++       1       2       2       3       4       6       6       8
++       8       9       4       5       6       7       2       4
++      10      12      12      14      14      15      10      11
++      12      13       8      10      16      18      18      20
++      20      21      16      17      18      19      14      16
++      22      24      24      26      26      27      22      23
++      24      25      20      22      28      30      30      32
++      32      33      28      29      30      31      26      28
++      34      36      36      38      38      39      34      35
++      36      37      32      34      40      42      42      44
++      44      45      40      41      42      43      38      40
++      46      48      48      50      50      51      46      47
++      48      49      44      46      52      54      54      56
++      56      57      52      53      54      55      50      52
++      58      60      60      62      62      63      58      59
++      60      61      56      58      64      66      64      65
++      62      64
++
++      96 !NTHETA: angles
++       1       2       3       4       6       8       6       4       5
++       4       6       7       6       8       9       8       6       7
++       1       2       4       3       2       4       2       4       6
++       2       4       5      10      12      14      12      10      11
++      10      12      13      12      14      15      14      12      13
++       6       8      10       9       8      10       8      10      12
++       8      10      11      16      18      20      18      16      17
++      16      18      19      18      20      21      20      18      19
++      12      14      16      15      14      16      14      16      18
++      14      16      17      22      24      26      24      22      23
++      22      24      25      24      26      27      26      24      25
++      18      20      22      21      20      22      20      22      24
++      20      22      23      28      30      32      30      28      29
++      28      30      31      30      32      33      32      30      31
++      24      26      28      27      26      28      26      28      30
++      26      28      29      34      36      38      36      34      35
++      34      36      37      36      38      39      38      36      37
++      30      32      34      33      32      34      32      34      36
++      32      34      35      40      42      44      42      40      41
++      40      42      43      42      44      45      44      42      43
++      36      38      40      39      38      40      38      40      42
++      38      40      41      46      48      50      48      46      47
++      46      48      49      48      50      51      50      48      49
++      42      44      46      45      44      46      44      46      48
++      44      46      47      52      54      56      54      52      53
++      52      54      55      54      56      57      56      54      55
++      48      50      52      51      50      52      50      52      54
++      50      52      53      58      60      62      60      58      59
++      58      60      61      60      62      63      62      60      61
++      54      56      58      57      56      58      56      58      60
++      56      58      59      66      64      65      60      62      64
++      63      62      64      62      64      66      62      64      65
++
++      31 !NPHI: dihedrals
++       2       4       6       8       1       2       4       6
++       8      10      12      14       4       6       8      10
++       6       8      10      12      14      16      18      20
++      10      12      14      16      12      14      16      18
++      20      22      24      26      16      18      20      22
++      18      20      22      24      26      28      30      32
++      22      24      26      28      24      26      28      30
++      32      34      36      38      28      30      32      34
++      30      32      34      36      38      40      42      44
++      34      36      38      40      36      38      40      42
++      44      46      48      50      40      42      44      46
++      42      44      46      48      50      52      54      56
++      46      48      50      52      48      50      52      54
++      56      58      60      62      52      54      56      58
++      54      56      58      60      58      60      62      64
++      60      62      64      66
++
++      32 !NIMPHI: impropers
++       6       4       8       7       2       1       4       3
++       4       2       6       5      12      10      14      13
++       8       6      10       9      10       8      12      11
++      18      16      20      19      14      12      16      15
++      16      14      18      17      24      22      26      25
++      20      18      22      21      22      20      24      23
++      30      28      32      31      26      24      28      27
++      28      26      30      29      36      34      38      37
++      32      30      34      33      34      32      36      35
++      42      40      44      43      38      36      40      39
++      40      38      42      41      48      46      50      49
++      44      42      46      45      46      44      48      47
++      54      52      56      55      50      48      52      51
++      52      50      54      53      60      58      62      61
++      56      54      58      57      58      56      60      59
++      62      60      64      63      64      62      66      65
++
++      11 !NDON: donors
++       4       5      10      11      16      17      22      23
++      28      29      34      35      40      41      46      47
++      52      53      58      59      64      65
++
++      11 !NACC: acceptors
++       3       2       9       8      15      14      21      20
++      27      26      33      32      39      38      45      44
++      51      50      57      56      63      62
++
++       0 !NNB
++
++       0       0       0       0       0       0       0       0
++       0       0       0       0       0       0       0       0
++       0       0       0       0       0       0       0       0
++       0       0       0       0       0       0       0       0
++       0       0       0       0       0       0       0       0
++       0       0       0       0       0       0       0       0
++       0       0       0       0       0       0       0       0
++       0       0       0       0       0       0       0       0
++       0       0
++
++      33       0 !NGRP
++       0       0       0       1       0       0       3       0       0
++       6       0       0       7       0       0       9       0       0
++      12       0       0      13       0       0      15       0       0
++      18       0       0      19       0       0      21       0       0
++      24       0       0      25       0       0      27       0       0
++      30       0       0      31       0       0      33       0       0
++      36       0       0      37       0       0      39       0       0
++      42       0       0      43       0       0      45       0       0
++      48       0       0      49       0       0      51       0       0
++      54       0       0      55       0       0      57       0       0
++      60       0       0      61       0       0      63       0       0
+diff --git a/examples/alanin/shorter-run/alanin.conf b/examples/alanin/shorter-run/alanin.conf
+new file mode 100644
+index 0000000..876d453
+--- /dev/null
++++ b/examples/alanin/shorter-run/alanin.conf
+@@ -0,0 +1,73 @@
++# This is a test namd configuration file
++
++timestep	0.5
++numsteps	10
++structure	alanin.psf
++parameters	alanin.params
++coordinates	alanin.pdb
++exclude		scaled1-4
++1-4scaling	0.4
++outputname 	output[myReplica]
++margin		1.0
++stepspercycle   3
++temperature	0
++
++switching 	on
++switchdist	7.0
++cutoff		8.0
++pairlistdist 	9.0
++
++dcdfile	alanin.dcd
++dcdfreq	1
++# If Box dimensions are defined, the DCD file can contain the box dimensions via the following
++#DCDunitcell    yes
++
++velDCDfile	alanin.vel
++velDCDfreq    1
++
++forceDCDfile	alanin.force
++forceDCDfreq    1
++
++#restartname	alanin.restart
++#restartfreq	10
++
++#langevin	on
++#langevinTemp	300.0
++#langevincol	O
++
++#constraints	on
++
++#fma		on
++
++seed		12345
++
++# IMD parameters
++
++# standard IMD parameters
++# IMDon streaming -- on or off
++IMDon		yes
++# IMDport -- port number to listen on
++IMDport		8888
++# IMDfreq -- frequency to send data
++IMDfreq		1
++# IMDwait -- wait for client to connect before starting simulation
++IMDwait		on
++
++# IMD version -- 2 for VMD and 3 for latest protocol
++IMDversion     3
++# IMD session info settings
++# IMDsendPositions -- sending positions of entire system
++IMDsendPositions        yes
++# IMDsendEnergies -- sending energies and bonded, non-bonded and other contributions
++IMDsendEnergies     yes
++# IMDsendTime -- sending time information (time, dt, step)
++IMDsendTime        yes
++# IMDsendBoxDimensions -- sending box dimensions (lattice vectors a, b, c)
++# If box dimensions are not defined, default unit box is sent
++IMDsendBoxDimensions       yes
++# IMDsendVelocities -- sending velocities of entire system
++IMDsendVelocities       yes
++# IMDsendForces -- sending forces on all atoms
++IMDsendForces      yes
++# IMDwrapPositions -- wrapping positions to box; applicable when IMDsendPositions is yes
++IMDwrapPositions       yes
+diff --git a/examples/alanin/shorter-run/alanin.params b/examples/alanin/shorter-run/alanin.params
+new file mode 100644
+index 0000000..1690deb
+--- /dev/null
++++ b/examples/alanin/shorter-run/alanin.params
+@@ -0,0 +1,402 @@
++remark - parameter file PARAM19 -
++remark PEPTIDE GEOMETRY FROM RAMACHANDRAN ET AL BBA 359:298 (1974)
++remark TORSIONS FROM HAGLER ET AL JACS 98:4600 (1976)
++remark JORGENSEN NONBOND PARAMETERS JACS 103:3976-3985 WITH 1-4 RC=1.80/0.1
++
++set echo=false end
++!! - PEPTIDE GEOMETRY TO GIVE RAMACHANDRAN ET AL BBA 359:298 (1974)
++!! - PEPTIDE TORSIONS FROM HAGLER ET AL JACS 98:4600 (1976)
++!! - NONBONDED TERMS JORGENSEN JACS 103:3976 W/ RC1-4 = 1.80 EC1-4 = 0.1
++!!  The default h-bond exponents are now 6-repul 4-attr
++!! ++++++++ ATOMTYPE OS (IN METHYL ESTER) ADDED FOR CHARMM COURSE /LN ++++
++!! Switched from Slater-Kirkwood to simple mixing rules - AB
++!! Hbond parameters based on comparisons of dimer results with
++!!   ab initio calculations. - WER  12/19/84
++!! Grouping of atom types for VDW parameters - BRB 1/3/85
++
++
++bond C    C      450.0  1.38!  B. R. GELIN THESIS AMIDE AND DIPEPTIDES
++bond C    CH1E   405.0  1.52!  EXCEPT WHERE NOTED.  CH1E,CH2E,CH3E, AND CT
++bond C    CH2E   405.0  1.52!  ALL TREATED THE SAME. UREY BRADLEY TERMS ADDED
++bond C    CH3E   405.0  1.52
++bond C    CR1E   450.0  1.38
++bond C    CT     405.0  1.53
++bond C    N      471.0  1.33
++bond C    NC2    400.0  1.33!  BOND LENGTH FROM PARMFIX9 FORCE K APROXIMATE
++bond C    NH1    471.0  1.33
++bond C    NH2    471.0  1.33
++bond C    NP     471.0  1.33
++bond C    NR     471.0  1.33
++bond C    O      580.0  1.23
++bond C    OC     580.0  1.23!  FORCE DECREASE AND LENGTH INCREASE FROM C O
++bond C    OH1    450.0  1.38!  FROM PARMFIX9 (NO VALUE IN GELIN THESIS)
++bond C    OS     292.0  1.43!  FROM DEP NORMAL MODE FIT
++bond CH1E CH1E   225.0  1.53
++bond CH1E CH2E   225.0  1.52
++bond CH1E CH3E   225.0  1.52
++bond CH1E N      422.0  1.45
++bond CH1E NH1    422.0  1.45
++bond CH1E NH2    422.0  1.45
++bond CH1E NH3    422.0  1.45
++bond CH1E OH1    400.0  1.42!  FROM PARMFIX9 (NO VALUE IN GELIN THESIS)
++bond CH2E CH2E   225.0  1.52
++bond CH2E CH3E   225.0  1.54
++bond CH2E CR1E   250.0  1.45!  FROM WARSHEL AND KARPLUS 1972 JACS 96:5612
++bond CH2E N      422.0  1.45
++bond CH2E NH1    422.0  1.45
++bond CH2E NH2    422.0  1.45
++bond CH2E NH3    422.0  1.45
++bond CH2E OH1    400.0  1.42
++bond CH2E S      450.0  1.81!  FROM PARMFIX9
++bond CH2E SH1E   450.0  1.81
++bond CH3E NH1    422.0  1.49
++bond CH3E NR     422.0  1.49 ! FOR NETROPSIN
++bond CH3E S      450.0  1.77!  FROM PARMFIX9
++bond CH3E OS     292.0  1.38!  FROM DEP NORMAL MODE FIT
++bond CM   OM    1115.0  1.128!  FROM CAUGHEY ET AL(1978),CARBON MONOXIDE
++bond CR1E CR1E   450.0  1.38
++bond CR1E NH1    450.0  1.305
++bond CR1E NR     450.0  1.305
++bond CT   CT     200.0  1.53
++bond CT   N      422.0  1.45
++bond CT   NC2    422.0  1.45
++bond CT   NH1    422.0  1.45
++bond CT   NH2    422.0  1.45
++bond CT   NH3    422.0  1.45
++bond CT   OH1    400.0  1.42
++bond CT   S      450.0  1.81
++!bond FE   CM     258.0  1.79!   FROM KROEKER ET AL(JCP:72:4846)
++!bond FE   NP     500.0  2.09
++!bond FE   NR      65.0  1.98!   FROM NAGAI ET AL(1980)
++!bond FE   OM     250.0  1.8!    JUST A GUESS.
++bond H    NH1    405.0  0.98!  GELIN AND IR STRETCH 3200 CM 1
++bond H    NH2    405.0  0.98
++bond H    OH1    450.0  0.96!  FROM IR STRETCH 3400 CM 1
++bond HA   C      350.0  1.08
++bond HA   CT     300.0  1.08
++bond HC   NC2    405.0  1.00
++bond HC   NH1    405.0  0.98
++bond HC   NH3    405.0  1.04
++bond OC   S      400.0  1.43
++bond OM   OM     600.0  1.23!   STRETCHING CONSTANT JUST A GUESS.
++bond S    S      500.0  2.02
++
++
++angle C    C    C       70.0 106.5!  FROM B. R. GELIN THESIS WITH HARMONIC
++angle C    C    CH2E    65.0 126.5!  PART OF F TERMS INCORPORATED. ATOMS
++angle C    C    CH3E    65.0 126.5!  WITH EXTENDED H COMPENSATED FOR LACK
++angle C    C    CR1E    70.0 122.5!  OF H ANGLES.
++angle C    C    CT      70.0 126.5
++angle C    C    HA      40.0 120.0!  AMIDE PARAMETERS FIT BY LEAST SQUARES
++angle C    C    NH1     65.0 109.0!  TO N-METHYL ACETAMIDE VIBRATIONS.
++angle C    C    NP      65.0 112.5!  MINIMIZATION OF N-METHYL ACETAMIDE.
++angle C    C    NR      65.0 112.5
++angle C    C    OH1     65.0 119.0
++angle C    C    O       65.0 119.0 ! FOR NETROPSIN
++angle CH1E C    N       20.0 117.5
++angle CH1E C    NH1     20.0 117.5
++angle CH1E C    O       85.0 121.5
++angle CH1E C    OC      85.0 117.5
++angle CH1E C    OH1     85.0 120.0
++angle CH2E C    CR1E    70.0 121.5
++angle CH2E C    N       20.0 117.5
++angle CH2E C    NH1     20.0 117.5
++angle CH2E C    NH2     20.0 117.5
++angle CH2E C    NC2     20.0 117.5 ! FOR NETROPSIN
++angle CH2E C    NR      60.0 116.0
++angle CH2E C    O       85.0 121.6
++angle CH2E C    OC      85.0 118.5
++angle CH2E C    OH1     85.0 120.0
++angle CH3E C    N       20.0 117.5
++angle CH3E C    NH1     20.0 117.5
++angle CH3E C    O       85.0 121.5
++angle CR1E C    CR1E    65.0 120.5
++angle CR1E C    NH1     65.0 110.5! USED ONLY IN HIS, NOT IT TRP
++angle CR1E C    NP      65.0 122.5
++angle CR1E C    NR      65.0 122.5
++angle CR1E C    OH1     65.0 119.0
++angle CT   C    N       20.0 117.5
++angle CT   C    NH1     20.0 117.5
++angle CT   C    NH2     20.0 117.5
++angle CT   C    O       85.0 121.5
++angle CT   C    OC      85.0 118.5
++angle CT   C    OH1     85.0 120.0
++angle HA   C    NH1     40.0 120.0
++angle HA   C    NH2     40.0 120.0
++angle HA   C    NR      40.0 120.0
++angle HA   C    O       85.0 121.5
++angle N    C    O       85.0 121.0
++angle NC2  C    NC2     70.0 120.0
++angle NC2  C    NH1     70.0 120.0
++angle NH1  C    NR      70.0 120.0
++angle NH1  C    O       65.0 121.0
++angle NH2  C    O       65.0 121.0
++angle O    C    OH1     85.0 120.0
++angle OC   C    OC      85.0 122.5
++angle OS   C    CH1E    70.0 125.3! FROM PARDNA10
++angle OS   C    CH2E    70.0 125.3!   - " -
++angle OS   C    O       70.0 120.0!   - " -
++angle C    CH1E CH1E    70.0 110.0
++angle C    CH1E CH2E    70.0 109.5
++angle C    CH1E CH3E    70.0 106.5
++angle C    CH1E N       45.0 111.6
++angle C    CH1E NH1     45.0 111.6
++angle C    CH1E NH2     45.0 111.6
++angle C    CH1E NH3     45.0 111.6
++angle CH1E CH1E CH2E    45.0 112.5
++angle CH1E CH1E CH3E    45.0 111.0
++angle CH1E CH1E NH1     50.0 110.0
++angle CH1E CH1E NH2     50.0 109.5
++angle CH1E CH1E NH3     50.0 107.5
++angle CH1E CH1E OH1     50.0 104.5
++angle CH2E CH1E CH3E    50.0 111.5
++angle CH2E CH1E N       65.0 104.0
++angle CH2E CH1E NH1     65.0 110.0
++angle CH2E CH1E NH2     65.0 110.0
++angle CH2E CH1E NH3     65.0 110.0
++angle CH3E CH1E CH3E    50.0 111.0
++angle CH3E CH1E NH1     65.0 108.5
++angle CH3E CH1E NH2     65.0 109.5
++angle CH3E CH1E NH3     65.0 109.5
++angle CH3E CH1E OH1     60.0 110.5
++angle C    CH2E CH1E    70.0 112.5
++angle C    CH2E CH2E    70.0 113.0
++angle C    CH2E NH1     70.0 111.6
++angle C    CH2E NH2     70.0 111.6
++angle C    CH2E NH3     70.0 111.6
++angle CH1E CH2E CH1E    45.0 117.0
++angle CH1E CH2E CH2E    45.0 112.5
++angle CH1E CH2E CH3E    45.0 113.0
++angle CH1E CH2E OH1     45.0 111.0
++angle CH3E CH2E OH1     45.0 111.0
++angle CH1E CH2E S       50.0 112.5
++angle CH1E CH2E SH1E    50.0 112.5
++angle CH2E CH2E CH2E    45.0 110.0
++angle CH2E CH2E CH3E    45.0 111.0
++angle CH2E CH2E N       65.0 105.0
++angle CH2E CH2E NH1     65.0 111.0
++angle CH2E CH2E NH2     65.0 109.5
++angle CH2E CH2E NH3     65.0 110.5
++angle CH2E CH2E S       50.0 112.5
++angle C    CR1E C       90.0 126.5
++angle C    CR1E CH2E    90.0 122.0
++angle C    CR1E CR1E    90.0 119.0
++angle C    CR1E NH1     90.0 109.5
++angle C    CR1E NR      90.0 106.5
++angle CR1E CR1E CR1E    90.0 120.5
++angle NH1  CR1E NH1     70.0 109.0
++angle NH1  CR1E NR      70.0 109.0
++angle C    CT   CT      70.0 109.5
++angle C    CT   HA      70.0 109.5
++angle C    CT   N       70.0 111.6
++angle C    CT   NH1     70.0 111.6
++angle C    CT   NH2     70.0 111.6
++angle C    CT   NH3     70.0 111.6
++angle CT   CT   CT      45.0 111.00
++angle CT   CT   HA      40.0 109.50
++angle CT   CT   N       65.0 105.00
++angle CT   CT   NC2     65.0 110.00
++angle CT   CT   NH1     65.0 110.00
++angle CT   CT   NH2     65.0 110.00
++angle CT   CT   NH3     65.0 110.00
++angle CT   CT   OH1     50.0 109.50
++angle CT   CT   S       50.0 112.50
++angle HA   CT   HA      40.0 109.5
++angle HA   CT   N       50.0 109.5
++angle HA   CT   NC2     50.0 109.5
++angle HA   CT   NH1     50.0 109.5
++angle HA   CT   NH3     50.0 109.5
++angle HA   CT   OH1     50.0 109.5
++angle HA   CT   S       40.0 109.5
++!angle FE   CM   OM       5.0  90.0!       FROM KROEKER ET AL(1980)
++angle C    N    CH1E    80.0 120.0
++angle C    N    CH2E    80.0 120.0
++angle C    N    CT      80.0 120.0
++angle CH1E N    CH2E    60.0 110.0
++angle CH1E N    CH3E    60.0 110.0
++angle CH2E N    CH3E    60.0 109.5
++angle CT   N    CT      60.0 110.0
++angle C    NC2  CT      80.0 120.0
++angle C    NC2  HC      35.0 120.0
++angle CT   NC2  HC      35.0 120.0
++angle HC   NC2  HC      40.0 120.0
++angle C    NH1  C       60.0 102.5  ! UNUSED (AND PROBABLY WRONG)
++angle C    NH1  CH1E    77.5 120.0
++angle C    NH1  CH2E    77.5 120.0
++angle C    NH1  CH3E    77.5 120.0
++angle C    NH1  CR1E    60.0 108.0
++angle C    NH1  CT      80.0 120.0
++angle C    NH1  H       30.0 120.0
++angle CH1E NH1  CH3E    60.0 120.0
++angle CH1E NH1  H       35.0 120.0
++angle CH2E NH1  CH3E    60.0 120.0
++angle CH2E NH1  H       35.0 120.0
++angle CH3E NH1  H       35.0 120.0
++angle CR1E NH1  CR1E    65.0 110.0
++angle CR1E NH1  H       35.0 120.0
++angle CT   NH1  H       35.0 120.0
++angle C    NH2  H       30.0 120.0
++angle CH1E NH2  CH2E    60.0 120.0
++angle CH1E NH2  H       35.0 120.0
++angle CH2E NH2  H       35.0 120.0
++angle CT   NH2  H       35.0 120.0
++angle H    NH2  H       40.0 125.0
++angle C    NP   C       70.0 102.5
++!angle C    NP   FE      50.0 128.0!  FORCE CONSTANT FROM PARMFIX9
++angle C    NR   C       70.0 102.5
++angle C    NR   CR1E    70.0 109.5
++angle CH3E NR   CR1E    70.0 109.5 ! FOR NETROPSIN
++angle CH3E NR   C       70.0 109.5 ! FOR NETROPSIN
++angle CR1E NR   CR1E    65.0 110.0
++!angle CR1E NR   FE      30.0 124.8!  FORCE CONSTANT FROM PARMFIX9
++angle CH1E NH3  HC      35.0 109.5
++angle CH1E NH3  CH2E    35.0 109.5
++angle CH2E NH3  HC      35.0 109.5
++angle CT   NH3  HC      35.0 109.5
++angle HC   NH3  HC      40.0 109.5
++angle C    OH1  H       50.0 109.5
++angle CH1E OH1  H       35.0 109.5
++angle CH2E OH1  H       35.0 109.5
++angle CT   OH1  H       35.0 109.5
++!angle FE   OM   OM       0.0 180.0!  DUMMY PARAMETER FOR PATCH AND ANALYSIS.
++angle C    OS   CH3E    46.5 120.5!   FROM PARDNA10
++angle CH2E S    CH3E    50.0  99.5! FROM PARMFIX9, CHECK WITH IR
++angle CH2E S    S       50.0 104.2
++angle CT   S    CT      50.0  99.5!  FORCE CONSTANTS FROM PARMFIX9
++angle CT   S    S       50.0 104.2
++angle OC   S    OC      85.0 109.5! FORCE CONSTANT JST A GUESS.
++!angle NP   FE   CM      5.0   90.0
++!angle NP   FE   NP      50.0  90.0
++!angle NP   FE   NR      5.0  115.0
++!angle NP   FE   OM      5.0   90.0! JUST A GUESS FROM EXISTING FE CM DATA
++!angle NR   FE   CM      5.0      180.0
++!angle NR   FE   OM      5.0  180.0! JUST A GUESS FROM EXISTING FE CM DATA
++
++
++dihe CH1E C    N    CH1E 10.0      2     180.0! PRO ISOM. BARRIER 20 KCAL/MOL.
++dihe CH2E C    N    CH1E 10.0       2     180.0
++dihe CR1E C    C    CR1E 5.0       2     180.0! => TRP OOP. VIB 170CM 1
++dihe CR1E C    C    C    2.5       2     180.0! SEE BEHLEN ET AL JCP 75:5685 81
++dihe CR1E C    C    NH1  2.5       2     180.0
++dihe X    C    CH1E X    0.0       3       0.0! FROM GELIN THESIS AMIDES
++dihe X    C    CH2E X    0.0       3       0.0! USING A SINGLE
++dihe X    C    CR1E X   10.0       2     180.0! DIHEDRAL PER BOND RATHER
++dihe X    C    CT   X    0.0       3       0.0! THAN MULTIPLE TORSIONS.
++dihe X    C    N    X    8.2       2     180.0! ALKANE TORSION REDUCED TO
++dihe X    C    NC2  X    8.2       2     180.0! 1.6 FROM 1.8 TO COINCIDE WITH
++dihe X    C    NH1  X    8.2       2     180.0! THE EXPERIMENTAL BARRIER.
++dihe X    C    NH2  X    8.2       2     180.0
++dihe X    C    OH1  X    1.8       2     180.0
++dihe X    C    OS   X    1.8       2     180.0 ! INFERRED FROM C-OH1
++dihe X    CH1E CH1E X    1.6       3       0.0
++dihe X    CH1E CH2E X    1.6       3       0.0
++dihe X    CH1E N    X    0.3       3       0.0! FROM HAGLER ET AL TABULATION OF
++dihe X    CH1E NH1  X    0.3       3       0.0! EXP. DATA AND 6 31G CALC.
++dihe X    CH1E NH2  X    1.8       3       0.0! PROTONATED SECONDARY AMINE
++dihe X    CH1E NH3  X    0.6       3       0.0! 1/PROTON SO 3 FOR THE BOND
++dihe X    CH1E OH1  X    0.5       3       0.0! CHANGED TO ROUGHLY MEOH
++dihe X    CH2E CH2E X    1.6       3       0.0
++dihe X    CH2E N    X    0.3       3       0.0! SEE CH1E COMMENTS
++dihe X    CH2E NH1  X    0.3       3       0.0
++dihe X    CH2E NH2  X    0.6       3       0.0
++dihe X    CH2E NH3  X    0.6       3       0.0
++dihe X    CH2E OH1  X    0.5       3       0.0
++dihe X    CH2E S    X    1.2       2       0.0
++dihe X    CT   CT   X    1.6       3       0.0
++dihe X    CT   N    X    0.3       3       0.0! SEE CH1E COMMENTS
++dihe X    CT   NC2  X    0.3       3       0.0
++dihe X    CT   NH1  X    0.3       3       0.0
++dihe X    CT   NH2  X    0.6       3       0.0
++dihe X    CT   NH3  X    0.6       3       0.0
++dihe X    CT   OH1  X    0.5       3       0.0
++dihe X    CT   S    X    1.2       2       0.0
++!dihe X    FE   NR   X    0.05      4       0.0
++!dihe X    FE   CM   X    0.05      4       0.0
++!dihe X    FE   OM   X    0.00      4       0.0
++dihe X    S    S    X    4.0       2       0.0! FROM EXP.R BARRI
++
++
++impr C    C    CR1E CH2E  90.0    0   0.0!GIVE 220 CM 1 METHYL OOP FOR TOLUENE.
++impr C    CR1E C    CH2E  90.0    0   0.0!USED HERE FOR TRP CG OUT OF PLANE
++impr C    CR1E CR1E CH2E  90.0    0   0.0!               PHE, AND TYR CG OOP
++impr C    CR1E NH1  CH2E  90.0    0   0.0!               HIS CG RING OOP
++impr C    NH1  CR1E CH2E  90.0    0   0.0!
++impr C    CR1E CR1E OH1  150.0    0   0.0! GIVE 249 CM 1 PHENOL OH OOP.
++impr C    H    H    NH2   45.0    0   0.0! PRIMARY AMIDES (ASN AND GLN) OOP
++impr C    OC   OC   CH1E 100.0    0   0.0! CARBOXYL OUT OF PLANE.
++impr C    OC   OC   CH2E 100.0    0   0.0!
++impr C    X    X    C     25.0    0   0.0! FROM BENZENE NORMAL MODE ANALYSIS
++impr C    X    X    CH2E  90.0    0   0.0! FROM TOLUENE METHYL OOP. 217 CM 1
++impr C    X    X    CH3E  90.0    0   0.0
++impr C    X    X    CR1E  25.0    0   0.0
++impr C    X    X    H     75.0    0   0.0! FROM BENZENE NORMAL MODE ANALYSIS
++impr C    X    X    HA    75.0    0   0.0!
++impr C    X    X    NH1  100.0    0   0.0! AMIDES FIT TO N METHYL ACETAMIDE.
++impr C    X    X    O    100.0    0   0.0
++impr C    X    X    OC   100.0    0   0.0
++impr C    X    X    OH1  150.0    0   0.0! USED FOR TYR HYDROXYL OOP
++impr CH1E X    X    CH1E  55.0    0 35.26439! CALCULATED TO  BE THE SAME AS THE 3
++impr CH1E X    X    CH2E  55.0    0 35.26439! H CH1E X ANGLES WITH K=40
++impr CH1E X    X    CH3E  55.0    0 35.26439
++impr CR1E X    X    CR1E  25.0    0   0.0! EXTENDED ATOM VERSION OF BENZENE
++impr CR1E X    X    NH1   25.0    0   0.0! SAME AS ABOVE FOR LACK OF VALUES
++!impr FE   X    X    NP    20.0    0   0.0! FROM PARMFIX9
++impr H    X    X    O     45.0    0   0.0
++impr N    CH1E CH2E C     45.0    0   0.0! PROLINE NITROGENS
++impr N    X    X    CH2E  45.0    0   0.0
++impr N    X    X    CT    45.0    0   0.0
++impr NC2  X    X    CT    45.0    0   0.0
++impr NC2  X    X    HC    45.0    0   0.0
++impr NH1  X    X    CH1E  45.0    0   0.0
++impr NH1  X    X    CH2E  45.0    0   0.0
++impr NH1  X    X    CH3E  45.0    0   0.0
++impr NH1  X    X    CT    45.0    0   0.0
++impr NH1  X    X    H     45.0    0   0.0! AMIDES PROTON OOP
++impr NH1  X    X    NH1   25.0    0   0.0! 
++impr NH1  X    X    NR    25.0    0   0.0
++impr NH2  X    X    H     45.0    0   0.0
++impr NR   X    X    C     25.0    0   0.0
++impr NR   X    X    CR1E  25.0    0   0.0
++impr NR   X    X    CT    25.0    0   0.0
++impr NR   X    X    CH3E  25.0    0   0.0 ! FOR NETROPSIN
++
++
++
++{* nonbonding parameter section *}
++{* ============================ *}
++
++ !                  eps     sigma       eps(1:4) sigma(1:4)
++ !                  (kcal/mol) (A)
++ !                  ---------------------------------------
++ NONBonded  H       0.0498   1.4254      0.0498   1.4254
++ NONBonded  HA      0.0450   2.6157      0.0450   2.6157 !- charged group.
++ NONBonded  HC      0.0498   1.0691      0.0498   1.0691 !   Reduced vdw radius
++ !
++ NONBonded  C       0.1200   3.7418      0.1000   3.3854 ! carbonyl carbon
++ NONBonded  CH1E    0.0486   4.2140      0.1000   3.3854 ! \
++ NONBonded  CH2E    0.1142   3.9823      0.1000   3.3854 !  extended carbons
++ NONBonded  CH3E    0.1811   3.8576      0.1000   3.3854 ! /
++!! NONBonded  CM      0.0262   4.4367      0.1000   3.3854 
++ NONBonded  CR1E    0.1200   3.7418      0.1000   3.3854 !  ring carbons
++!! NONBonded  CT      0.0262   4.4367      0.1000   3.3854
++ !
++ NONBonded  N       0.2384   2.8509      0.2384   2.8509
++ NONBonded  NC2     0.2384   2.8509      0.2384   2.8509
++ NONBonded  NH1     0.2384   2.8509      0.2384   2.8509
++ NONBonded  NH2     0.2384   2.8509      0.2384   2.8509
++ NONBonded  NH3     0.2384   2.8509      0.2384   2.8509
++ NONBonded  NP      0.2384   2.8509      0.2384   2.8509
++ NONBonded  NR      0.2384   2.8509      0.2384   2.8509
++ !
++ NONBonded  O       0.1591   2.8509      0.1591   2.8509
++ NONBonded  OC      0.6469   2.8509      0.6469   2.8509
++ NONBonded  OH1     0.1591   2.8509      0.1591   2.8509
++!! NONBonded  OM      0.1591   2.8509      0.1591   2.8509
++ NONBonded  OS      0.1591   2.8509      0.1591   2.8509
++ !
++ NONBonded  S       0.0430   3.3676      0.0430   3.3676
++ NONBonded  SH1E    0.0430   3.3676      0.0430   3.3676
++ !
++!! NONBONDED FE        0.0000    1.1582      0.0000 1.1582
++
++set echo=true end
+diff --git a/examples/alanin/shorter-run/alanin.pdb b/examples/alanin/shorter-run/alanin.pdb
+new file mode 100644
+index 0000000..078e7f4
+--- /dev/null
++++ b/examples/alanin/shorter-run/alanin.pdb
+@@ -0,0 +1,77 @@
++REMARK FILENAME="/usr/people/nonella/xplor/benchmark1/ALANIN.PDB"
++REMARK PARAM11.PRO ( from PARAM6A )
++REMARK ===========
++REMARK PROTEIN PARAMETERS:
++REMARK PEPTIDE GEOMETRY FROM RAMACHANDRAN ET AL BBA 359:298 (1974)
++REMARK TORSIONS FROM HAGLER ET AL JACS 98:4600 (1976)
++REMARK LENNARD-JONES NONBONDED PARAMETERS WITH SPECIAL TREATMENT OF 1:4
++REMARK CARBON-CARBON INTERACTIONS: JORGENSON ET. AL.
++REMARK                           JACS 103:3976-3985 WITH 1-4 RC=1.80/0.1
++REMARK DATE:16-Feb-89  11:21:32       created by user: nonella
++ATOM      1  CA  ACE     1      -2.184   0.591   0.910    0.0  10.0     MAIN
++ATOM      2  C   ACE     1      -0.665   0.627   0.966  100.0   0.0     MAIN
++ATOM      3  O   ACE     1      -0.069   1.213   1.868  100.0   0.0     MAIN
++ATOM      4  N   ALA     2       0.000   0.000   0.000  100.0   0.0     MAIN
++ATOM      5  H   ALA     2      -0.490  -0.462  -0.712  100.0   0.0     MAIN
++ATOM      6  CA  ALA     2       1.450   0.000   0.000    0.0  10.0     MAIN
++ATOM      7  CB  ALA     2       1.969  -0.670  -1.262  100.0   0.0     MAIN
++ATOM      8  C   ALA     2       2.010   1.413   0.000  100.0   0.0     MAIN
++ATOM      9  O   ALA     2       2.911   1.748   0.767  100.0   0.0     MAIN
++ATOM     10  N   ALA     3       1.488   2.280  -0.863  100.0   0.0     MAIN
++ATOM     11  H   ALA     3       0.770   1.998  -1.467  100.0   0.0     MAIN
++ATOM     12  CA  ALA     3       1.981   3.643  -0.909    0.0  10.0     MAIN
++ATOM     13  CB  ALA     3       1.147   4.464  -1.880  100.0   0.0     MAIN
++ATOM     14  C   ALA     3       1.865   4.326   0.444  100.0   0.0     MAIN
++ATOM     15  O   ALA     3       2.801   4.963   0.924  100.0   0.0     MAIN
++ATOM     16  N   ALA     4       0.710   4.211   1.093  100.0   0.0     MAIN
++ATOM     17  H   ALA     4      -0.026   3.700   0.697  100.0   0.0     MAIN
++ATOM     18  CA  ALA     4       0.541   4.841   2.388    0.0  10.0     MAIN
++ATOM     19  CB  ALA     4      -0.809   4.462   2.976  100.0   0.0     MAIN
++ATOM     20  C   ALA     4       1.591   4.371   3.381  100.0   0.0     MAIN
++ATOM     21  O   ALA     4       2.212   5.167   4.085  100.0   0.0     MAIN
++ATOM     22  N   ALA     5       1.818   3.063   3.463  100.0   0.0     MAIN
++ATOM     23  H   ALA     5       1.315   2.443   2.895  100.0   0.0     MAIN
++ATOM     24  CA  ALA     5       2.809   2.556   4.392    0.0  10.0     MAIN
++ATOM     25  CB  ALA     5       2.970   1.055   4.209  100.0   0.0     MAIN
++ATOM     26  C   ALA     5       4.176   3.170   4.142  100.0   0.0     MAIN
++ATOM     27  O   ALA     5       4.859   3.615   5.064  100.0   0.0     MAIN
++ATOM     28  N   ALA     6       4.611   3.212   2.886  100.0   0.0     MAIN
++ATOM     29  H   ALA     6       4.055   2.853   2.163  100.0   0.0     MAIN
++ATOM     30  CA  ALA     6       5.908   3.786   2.586    0.0  10.0     MAIN
++ATOM     31  CB  ALA     6       6.121   3.830   1.082  100.0   0.0     MAIN
++ATOM     32  C   ALA     6       6.012   5.221   3.079  100.0   0.0     MAIN
++ATOM     33  O   ALA     6       6.992   5.614   3.710  100.0   0.0     MAIN
++ATOM     34  N   ALA     7       5.002   6.040   2.802  100.0   0.0     MAIN
++ATOM     35  H   ALA     7       4.228   5.711   2.297  100.0   0.0     MAIN
++ATOM     36  CA  ALA     7       5.044   7.419   3.245    0.0  10.0     MAIN
++ATOM     37  CB  ALA     7       3.730   8.110   2.918  100.0   0.0     MAIN
++ATOM     38  C   ALA     7       5.219   7.518   4.752  100.0   0.0     MAIN
++ATOM     39  O   ALA     7       6.045   8.278   5.255  100.0   0.0     MAIN
++ATOM     40  N   ALA     8       4.445   6.748   5.512  100.0   0.0     MAIN
++ATOM     41  H   ALA     8       3.792   6.148   5.096  100.0   0.0     MAIN
++ATOM     42  CA  ALA     8       4.566   6.799   6.956    0.0  10.0     MAIN
++ATOM     43  CB  ALA     8       3.670   5.747   7.589  100.0   0.0     MAIN
++ATOM     44  C   ALA     8       5.984   6.488   7.409  100.0   0.0     MAIN
++ATOM     45  O   ALA     8       6.560   7.186   8.241  100.0   0.0     MAIN
++ATOM     46  N   ALA     9       6.582   5.429   6.871  100.0   0.0     MAIN
++ATOM     47  H   ALA     9       6.109   4.882   6.209  100.0   0.0     MAIN
++ATOM     48  CA  ALA     9       7.934   5.082   7.264    0.0  10.0     MAIN
++ATOM     49  CB  ALA     9       8.436   3.918   6.425  100.0   0.0     MAIN
++ATOM     50  C   ALA     9       8.898   6.233   7.027  100.0   0.0     MAIN
++ATOM     51  O   ALA     9       9.705   6.584   7.887  100.0   0.0     MAIN
++ATOM     52  N   ALA    10       8.839   6.851   5.851  100.0   0.0     MAIN
++ATOM     53  H   ALA    10       8.190   6.560   5.176  100.0   0.0     MAIN
++ATOM     54  CA  ALA    10       9.733   7.956   5.567    0.0  10.0     MAIN
++ATOM     55  CB  ALA    10       9.388   8.570   4.219  100.0   0.0     MAIN
++ATOM     56  C   ALA    10       9.595   9.067   6.595  100.0   0.0     MAIN
++ATOM     57  O   ALA    10      10.580   9.587   7.117  100.0   0.0     MAIN
++ATOM     58  N   ALA    11       8.364   9.460   6.912  100.0   0.0     MAIN
++ATOM     59  H   ALA    11       7.590   9.036   6.488  100.0   0.0     MAIN
++ATOM     60  CA  ALA    11       8.169  10.516   7.887    0.0  10.0     MAIN
++ATOM     61  CB  ALA    11       6.686  10.695   8.168  100.0   0.0     MAIN
++ATOM     62  C   ALA    11       8.823  10.177   9.217  100.0   0.0     MAIN
++ATOM     63  O   ALA    11       9.523  10.992   9.815  100.0   0.0     MAIN
++ATOM     64  N   CBX    12       8.610   8.962   9.714  100.0   0.0     MAIN
++ATOM     65  H   CBX    12       8.050   8.324   9.225  100.0   0.0     MAIN
++ATOM     66  CA  CBX    12       9.223   8.571  11.014    0.0  10.0     MAIN
++END
+diff --git a/examples/alanin/shorter-run/alanin.psf b/examples/alanin/shorter-run/alanin.psf
+new file mode 100644
+index 0000000..7587766
+--- /dev/null
++++ b/examples/alanin/shorter-run/alanin.psf
+@@ -0,0 +1,206 @@
++PSF 
++
++      11 !NTITLE
++ REMARKS FILENAME="/usr/people/nonella/xplor/benchmark1/ALANIN.PSF"             
++ REMARKS PARAM11.PRO ( from PARAM6A )                                           
++ REMARKS ===========                                                            
++ REMARKS PROTEIN PARAMETERS:                                                    
++ REMARKS PEPTIDE GEOMETRY FROM RAMACHANDRAN ET AL BBA 359:298 (1974)            
++ REMARKS TORSIONS FROM HAGLER ET AL JACS 98:4600 (1976)                         
++ REMARKS LENNARD-JONES NONBONDED PARAMETERS WITH SPECIAL TREATMENT OF 1:4       
++ REMARKS CARBON-CARBON INTERACTIONS: JORGENSON ET. AL.                          
++ REMARKS                           JACS 103:3976-3985 WITH 1-4 RC=1.80/0.1      
++ REMARKS                                                                        
++ REMARKS DATE:16-Feb-89  11:21:29       created by user: nonella                
++
++      66 !NATOM
++       1 MAIN 1    ACE  CA   CH3E   0.000000E+00   15.0350           0
++       2 MAIN 1    ACE  C    C      0.450000       12.0110           0
++       3 MAIN 1    ACE  O    O     -0.450000       15.9994           0
++       4 MAIN 2    ALA  N    NH1   -0.350000       14.0067           0
++       5 MAIN 2    ALA  H    H      0.250000       1.00800           0
++       6 MAIN 2    ALA  CA   CH1E   0.100000       13.0190           0
++       7 MAIN 2    ALA  CB   CH3E   0.000000E+00   15.0350           0
++       8 MAIN 2    ALA  C    C      0.450000       12.0110           0
++       9 MAIN 2    ALA  O    O     -0.450000       15.9994           0
++      10 MAIN 3    ALA  N    NH1   -0.350000       14.0067           0
++      11 MAIN 3    ALA  H    H      0.250000       1.00800           0
++      12 MAIN 3    ALA  CA   CH1E   0.100000       13.0190           0
++      13 MAIN 3    ALA  CB   CH3E   0.000000E+00   15.0350           0
++      14 MAIN 3    ALA  C    C      0.450000       12.0110           0
++      15 MAIN 3    ALA  O    O     -0.450000       15.9994           0
++      16 MAIN 4    ALA  N    NH1   -0.350000       14.0067           0
++      17 MAIN 4    ALA  H    H      0.250000       1.00800           0
++      18 MAIN 4    ALA  CA   CH1E   0.100000       13.0190           0
++      19 MAIN 4    ALA  CB   CH3E   0.000000E+00   15.0350           0
++      20 MAIN 4    ALA  C    C      0.450000       12.0110           0
++      21 MAIN 4    ALA  O    O     -0.450000       15.9994           0
++      22 MAIN 5    ALA  N    NH1   -0.350000       14.0067           0
++      23 MAIN 5    ALA  H    H      0.250000       1.00800           0
++      24 MAIN 5    ALA  CA   CH1E   0.100000       13.0190           0
++      25 MAIN 5    ALA  CB   CH3E   0.000000E+00   15.0350           0
++      26 MAIN 5    ALA  C    C      0.450000       12.0110           0
++      27 MAIN 5    ALA  O    O     -0.450000       15.9994           0
++      28 MAIN 6    ALA  N    NH1   -0.350000       14.0067           0
++      29 MAIN 6    ALA  H    H      0.250000       1.00800           0
++      30 MAIN 6    ALA  CA   CH1E   0.100000       13.0190           0
++      31 MAIN 6    ALA  CB   CH3E   0.000000E+00   15.0350           0
++      32 MAIN 6    ALA  C    C      0.450000       12.0110           0
++      33 MAIN 6    ALA  O    O     -0.450000       15.9994           0
++      34 MAIN 7    ALA  N    NH1   -0.350000       14.0067           0
++      35 MAIN 7    ALA  H    H      0.250000       1.00800           0
++      36 MAIN 7    ALA  CA   CH1E   0.100000       13.0190           0
++      37 MAIN 7    ALA  CB   CH3E   0.000000E+00   15.0350           0
++      38 MAIN 7    ALA  C    C      0.450000       12.0110           0
++      39 MAIN 7    ALA  O    O     -0.450000       15.9994           0
++      40 MAIN 8    ALA  N    NH1   -0.350000       14.0067           0
++      41 MAIN 8    ALA  H    H      0.250000       1.00800           0
++      42 MAIN 8    ALA  CA   CH1E   0.100000       13.0190           0
++      43 MAIN 8    ALA  CB   CH3E   0.000000E+00   15.0350           0
++      44 MAIN 8    ALA  C    C      0.450000       12.0110           0
++      45 MAIN 8    ALA  O    O     -0.450000       15.9994           0
++      46 MAIN 9    ALA  N    NH1   -0.350000       14.0067           0
++      47 MAIN 9    ALA  H    H      0.250000       1.00800           0
++      48 MAIN 9    ALA  CA   CH1E   0.100000       13.0190           0
++      49 MAIN 9    ALA  CB   CH3E   0.000000E+00   15.0350           0
++      50 MAIN 9    ALA  C    C      0.450000       12.0110           0
++      51 MAIN 9    ALA  O    O     -0.450000       15.9994           0
++      52 MAIN 10   ALA  N    NH1   -0.350000       14.0067           0
++      53 MAIN 10   ALA  H    H      0.250000       1.00800           0
++      54 MAIN 10   ALA  CA   CH1E   0.100000       13.0190           0
++      55 MAIN 10   ALA  CB   CH3E   0.000000E+00   15.0350           0
++      56 MAIN 10   ALA  C    C      0.450000       12.0110           0
++      57 MAIN 10   ALA  O    O     -0.450000       15.9994           0
++      58 MAIN 11   ALA  N    NH1   -0.350000       14.0067           0
++      59 MAIN 11   ALA  H    H      0.250000       1.00800           0
++      60 MAIN 11   ALA  CA   CH1E   0.100000       13.0190           0
++      61 MAIN 11   ALA  CB   CH3E   0.000000E+00   15.0350           0
++      62 MAIN 11   ALA  C    C      0.450000       12.0110           0
++      63 MAIN 11   ALA  O    O     -0.450000       15.9994           0
++      64 MAIN 12   CBX  N    NH1   -0.350000       14.0067           0
++      65 MAIN 12   CBX  H    H      0.250000       1.00800           0
++      66 MAIN 12   CBX  CA   CH3E   0.100000       15.0350           0
++
++      65 !NBOND: bonds
++       1       2       2       3       4       6       6       8
++       8       9       4       5       6       7       2       4
++      10      12      12      14      14      15      10      11
++      12      13       8      10      16      18      18      20
++      20      21      16      17      18      19      14      16
++      22      24      24      26      26      27      22      23
++      24      25      20      22      28      30      30      32
++      32      33      28      29      30      31      26      28
++      34      36      36      38      38      39      34      35
++      36      37      32      34      40      42      42      44
++      44      45      40      41      42      43      38      40
++      46      48      48      50      50      51      46      47
++      48      49      44      46      52      54      54      56
++      56      57      52      53      54      55      50      52
++      58      60      60      62      62      63      58      59
++      60      61      56      58      64      66      64      65
++      62      64
++
++      96 !NTHETA: angles
++       1       2       3       4       6       8       6       4       5
++       4       6       7       6       8       9       8       6       7
++       1       2       4       3       2       4       2       4       6
++       2       4       5      10      12      14      12      10      11
++      10      12      13      12      14      15      14      12      13
++       6       8      10       9       8      10       8      10      12
++       8      10      11      16      18      20      18      16      17
++      16      18      19      18      20      21      20      18      19
++      12      14      16      15      14      16      14      16      18
++      14      16      17      22      24      26      24      22      23
++      22      24      25      24      26      27      26      24      25
++      18      20      22      21      20      22      20      22      24
++      20      22      23      28      30      32      30      28      29
++      28      30      31      30      32      33      32      30      31
++      24      26      28      27      26      28      26      28      30
++      26      28      29      34      36      38      36      34      35
++      34      36      37      36      38      39      38      36      37
++      30      32      34      33      32      34      32      34      36
++      32      34      35      40      42      44      42      40      41
++      40      42      43      42      44      45      44      42      43
++      36      38      40      39      38      40      38      40      42
++      38      40      41      46      48      50      48      46      47
++      46      48      49      48      50      51      50      48      49
++      42      44      46      45      44      46      44      46      48
++      44      46      47      52      54      56      54      52      53
++      52      54      55      54      56      57      56      54      55
++      48      50      52      51      50      52      50      52      54
++      50      52      53      58      60      62      60      58      59
++      58      60      61      60      62      63      62      60      61
++      54      56      58      57      56      58      56      58      60
++      56      58      59      66      64      65      60      62      64
++      63      62      64      62      64      66      62      64      65
++
++      31 !NPHI: dihedrals
++       2       4       6       8       1       2       4       6
++       8      10      12      14       4       6       8      10
++       6       8      10      12      14      16      18      20
++      10      12      14      16      12      14      16      18
++      20      22      24      26      16      18      20      22
++      18      20      22      24      26      28      30      32
++      22      24      26      28      24      26      28      30
++      32      34      36      38      28      30      32      34
++      30      32      34      36      38      40      42      44
++      34      36      38      40      36      38      40      42
++      44      46      48      50      40      42      44      46
++      42      44      46      48      50      52      54      56
++      46      48      50      52      48      50      52      54
++      56      58      60      62      52      54      56      58
++      54      56      58      60      58      60      62      64
++      60      62      64      66
++
++      32 !NIMPHI: impropers
++       6       4       8       7       2       1       4       3
++       4       2       6       5      12      10      14      13
++       8       6      10       9      10       8      12      11
++      18      16      20      19      14      12      16      15
++      16      14      18      17      24      22      26      25
++      20      18      22      21      22      20      24      23
++      30      28      32      31      26      24      28      27
++      28      26      30      29      36      34      38      37
++      32      30      34      33      34      32      36      35
++      42      40      44      43      38      36      40      39
++      40      38      42      41      48      46      50      49
++      44      42      46      45      46      44      48      47
++      54      52      56      55      50      48      52      51
++      52      50      54      53      60      58      62      61
++      56      54      58      57      58      56      60      59
++      62      60      64      63      64      62      66      65
++
++      11 !NDON: donors
++       4       5      10      11      16      17      22      23
++      28      29      34      35      40      41      46      47
++      52      53      58      59      64      65
++
++      11 !NACC: acceptors
++       3       2       9       8      15      14      21      20
++      27      26      33      32      39      38      45      44
++      51      50      57      56      63      62
++
++       0 !NNB
++
++       0       0       0       0       0       0       0       0
++       0       0       0       0       0       0       0       0
++       0       0       0       0       0       0       0       0
++       0       0       0       0       0       0       0       0
++       0       0       0       0       0       0       0       0
++       0       0       0       0       0       0       0       0
++       0       0       0       0       0       0       0       0
++       0       0       0       0       0       0       0       0
++       0       0
++
++      33       0 !NGRP
++       0       0       0       1       0       0       3       0       0
++       6       0       0       7       0       0       9       0       0
++      12       0       0      13       0       0      15       0       0
++      18       0       0      19       0       0      21       0       0
++      24       0       0      25       0       0      27       0       0
++      30       0       0      31       0       0      33       0       0
++      36       0       0      37       0       0      39       0       0
++      42       0       0      43       0       0      45       0       0
++      48       0       0      49       0       0      51       0       0
++      54       0       0      55       0       0      57       0       0
++      60       0       0      61       0       0      63       0       0
+diff --git a/examples/alanin/shorter-run/output-sample.xsc b/examples/alanin/shorter-run/output-sample.xsc
+new file mode 100644
+index 0000000..79f1392
+--- /dev/null
++++ b/examples/alanin/shorter-run/output-sample.xsc
+@@ -0,0 +1,3 @@
++# NAMD extended system configuration output file
++#$LABELS step o_x o_y o_z
++10 0 0 0
+diff --git a/src/CollectionMaster.C b/src/CollectionMaster.C
+index cae4705..f79eb09 100644
+--- a/src/CollectionMaster.C
++++ b/src/CollectionMaster.C
+@@ -133,19 +133,21 @@ void CollectionMaster::disposeVelocities(CollectVectorInstance *c)
+     DebugM(3,"Collected velocities at " << c->seq << std::endl);
+     int seq = c->seq;
+     int size = c->data.size();
++    if ( ! size ) size = c->fdata.size();
+     Vector *data = c->data.begin();
++    FloatVector *fdata = c->fdata.begin();
+     double exectime = CmiWallTimer();
+     double mem = memusage_MB();
+ #ifdef NODEGROUP_FORCE_REGISTER
+     if (Node::Object()->simParameters->CUDASOAintegrate) {
+       CProxy_PatchData cpdata(CkpvAccess(BOCclass_group).patchData);
+       Output *pout = cpdata.ckLocalBranch()->ptrOutput;
+-      pout->velocity(seq,size,data);
++      pout->velocity(seq,size,data,fdata);
+     }
+     else
+ #endif
+     {
+-      Node::Object()->output->velocity(seq,size,data);
++      Node::Object()->output->velocity(seq,size,data,fdata);
+     }
+     c->free();
+     exectime = CmiWallTimer()-exectime;
+@@ -186,19 +188,21 @@ void CollectionMaster::disposeForces(CollectVectorInstance *c)
+     DebugM(3,"Collected forces at " << c->seq << std::endl);
+     int seq = c->seq;
+     int size = c->data.size();
++    if ( ! size ) size = c->fdata.size();
+     Vector *data = c->data.begin();
++    FloatVector *fdata = c->fdata.begin();
+     double exectime = CmiWallTimer();
+     double mem = memusage_MB();
+ #ifdef NODEGROUP_FORCE_REGISTER
+     if (Node::Object()->simParameters->CUDASOAintegrate) {
+       CProxy_PatchData cpdata(CkpvAccess(BOCclass_group).patchData);
+       Output *pout = cpdata.ckLocalBranch()->ptrOutput;
+-      pout->force(seq,size,data);
++      pout->force(seq,size,data,fdata);
+     }
+     else
+ #endif
+     {
+-      Node::Object()->output->force(seq,size,data);
++      Node::Object()->output->force(seq,size,data,fdata);
+     }
+     c->free();
+     exectime = CmiWallTimer()-exectime;
+diff --git a/src/CollectionMaster.h b/src/CollectionMaster.h
+index 2f14ade..4ea4821 100644
+--- a/src/CollectionMaster.h
++++ b/src/CollectionMaster.h
+@@ -409,8 +409,9 @@ class CollectMidVectorInstance{
+ 
+     int ready(void) { return ( ! remaining ); }
+ 
+-    int seq;    
++    int seq;   
+     Lattice lattice;
++
+     ResizeArray<Vector> data;
+     ResizeArray<FloatVector> fdata;
+ 
+diff --git a/src/CollectionMgr.C b/src/CollectionMgr.C
+index 30a8799..0e0d035 100644
+--- a/src/CollectionMgr.C
++++ b/src/CollectionMgr.C
+@@ -108,7 +108,7 @@ void CollectionMgr::submitPositions(int seq, FullAtomList &a,
+   }
+ }
+ 
+-void CollectionMgr::submitVelocities(int seq, int zero, FullAtomList &a)
++void CollectionMgr::submitVelocities(int seq, int zero, FullAtomList &a, int prec)
+ {
+   int numAtoms = a.size();
+   AtomIDList aid(numAtoms);
+@@ -121,7 +121,7 @@ void CollectionMgr::submitVelocities(int seq, int zero, FullAtomList &a)
+     else d[i] = a[i].velocity;
+   }
+   CollectVectorInstance *c;
+-  if ( ( c = velocities.submitData(seq,aid,oRank,d) ) )
++  if ( ( c = velocities.submitData(seq,aid,oRank,d,prec) ) )
+   {
+       CProxy_ParallelIOMgr io(CkpvAccess(BOCclass_group).ioMgr);
+       ParallelIOMgr *ioMgr = io.ckLocalBranch();
+@@ -131,21 +131,45 @@ void CollectionMgr::submitVelocities(int seq, int zero, FullAtomList &a)
+       for(int i=0; i<c->aid.size(); i++){
+           perOList[c->outRank[i]].add(i);
+       }    
+-      CollectVectorVarMsg::DataStatus vstatus = CollectVectorVarMsg::VectorValid;
++      CollectVectorVarMsg::DataStatus vstatus;
++      if(prec==1){
++          vstatus = CollectVectorVarMsg::FloatVectorValid;
++      }else if(prec==2){
++          vstatus = CollectVectorVarMsg::VectorValid;
++      }else{
++          vstatus = CollectVectorVarMsg::BothValid;
++      }
+       //send msg to output proc if there's one    
+         for(int i=0; i<ioMgr->numOutputProcs; i++){
+             int numAtoms = perOList[i].size();
+             if(!numAtoms && ioMgr->numProxiesPerOutputProc == 0) continue;
+             CollectVectorVarMsg *msg;            
+-            msg = new(numAtoms, numAtoms, 0, 0)CollectVectorVarMsg;
++            if( vstatus == CollectVectorVarMsg::VectorValid){
++                msg = new(numAtoms, numAtoms, 0, 0)CollectVectorVarMsg;
++                for(int j=0; j<numAtoms; j++){
++                    int lIdx = perOList[i][j];
++                    msg->aid[j] = c->aid[lIdx];
++                    msg->data[j] = c->data[lIdx];
++                }
++            }else if(vstatus == CollectVectorVarMsg::FloatVectorValid){
++                msg = new(numAtoms, 0, numAtoms, 0)CollectVectorVarMsg;
++                for(int j=0; j<numAtoms; j++){
++                    int lIdx = perOList[i][j];
++                    msg->aid[j] = c->aid[lIdx];
++                    msg->fdata[j] = c->fdata[lIdx];
++                }
++            }else{
++                msg = new(numAtoms, numAtoms, numAtoms, 0)CollectVectorVarMsg;
++                for(int j=0; j<numAtoms; j++){
++                    int lIdx = perOList[i][j];
++                    msg->aid[j] = c->aid[lIdx];
++                    msg->data[j] = c->data[lIdx];
++                    msg->fdata[j] = c->fdata[lIdx];
++                }
++            }
+             msg->seq = c->seq;
+             msg->size = numAtoms;
+             msg->status = vstatus;
+-            for(int j=0; j<numAtoms; j++){
+-                int lIdx = perOList[i][j];
+-                msg->aid[j] = c->aid[lIdx];
+-                msg->data[j] = c->data[lIdx];
+-            }
+             io[ioMgr->myOutputProxies[i]].receiveVelocities(msg);            
+         }
+         c->free();
+@@ -153,7 +177,7 @@ void CollectionMgr::submitVelocities(int seq, int zero, FullAtomList &a)
+   }
+ }
+ 
+-void CollectionMgr::submitForces(int seq, FullAtomList &a, int maxForceUsed, ForceList *f)
++void CollectionMgr::submitForces(int seq, FullAtomList &a, int maxForceUsed, ForceList *f, int prec)
+ {
+   int numAtoms = a.size();
+   AtomIDList aid(numAtoms);
+@@ -176,7 +200,7 @@ void CollectionMgr::submitForces(int seq, FullAtomList &a, int maxForceUsed, For
+     }
+   }
+   CollectVectorInstance *c;
+-  if ( ( c = forces.submitData(seq,aid,oRank,d) ) )
++  if ( ( c = forces.submitData(seq,aid,oRank,d,prec) ) )
+   {
+       CProxy_ParallelIOMgr io(CkpvAccess(BOCclass_group).ioMgr);
+       ParallelIOMgr *ioMgr = io.ckLocalBranch();
+@@ -186,21 +210,45 @@ void CollectionMgr::submitForces(int seq, FullAtomList &a, int maxForceUsed, For
+       for(int i=0; i<c->aid.size(); i++){
+           perOList[c->outRank[i]].add(i);
+       }    
+-      CollectVectorVarMsg::DataStatus vstatus = CollectVectorVarMsg::VectorValid;
++      CollectVectorVarMsg::DataStatus vstatus;
++      if(prec==1){
++          vstatus = CollectVectorVarMsg::FloatVectorValid;
++      }else if(prec==2){
++          vstatus = CollectVectorVarMsg::VectorValid;
++      }else{
++          vstatus = CollectVectorVarMsg::BothValid;
++      }
+       //send msg to output proc if there's one    
+         for(int i=0; i<ioMgr->numOutputProcs; i++){
+             int numAtoms = perOList[i].size();
+             if(!numAtoms && ioMgr->numProxiesPerOutputProc == 0) continue;
+-            CollectVectorVarMsg *msg;            
+-            msg = new(numAtoms, numAtoms, 0, 0)CollectVectorVarMsg;
++            CollectVectorVarMsg *msg;
++            if( vstatus == CollectVectorVarMsg::VectorValid){
++                msg = new(numAtoms, numAtoms, 0, 0)CollectVectorVarMsg;
++                for(int j=0; j<numAtoms; j++){
++                    int lIdx = perOList[i][j];
++                    msg->aid[j] = c->aid[lIdx];
++                    msg->data[j] = c->data[lIdx];
++                }
++            }else if(vstatus == CollectVectorVarMsg::FloatVectorValid){
++                msg = new(numAtoms, 0, numAtoms, 0)CollectVectorVarMsg;
++                for(int j=0; j<numAtoms; j++){
++                    int lIdx = perOList[i][j];
++                    msg->aid[j] = c->aid[lIdx];
++                    msg->fdata[j] = c->fdata[lIdx];
++                }
++            }else{
++                msg = new(numAtoms, numAtoms, numAtoms, 0)CollectVectorVarMsg;
++                for(int j=0; j<numAtoms; j++){
++                    int lIdx = perOList[i][j];
++                    msg->aid[j] = c->aid[lIdx];
++                    msg->data[j] = c->data[lIdx];
++                    msg->fdata[j] = c->fdata[lIdx];
++                }
++            }
+             msg->seq = c->seq;
+             msg->size = numAtoms;
+             msg->status = vstatus;
+-            for(int j=0; j<numAtoms; j++){
+-                int lIdx = perOList[i][j];
+-                msg->aid[j] = c->aid[lIdx];
+-                msg->data[j] = c->data[lIdx];
+-            }
+             io[ioMgr->myOutputProxies[i]].receiveForces(msg);            
+         }
+         c->free();
+@@ -252,7 +300,7 @@ void CollectionMgr::submitPositions(int seq, FullAtomList &a,
+   }
+ }
+ 
+-void CollectionMgr::submitVelocities(int seq, int zero, FullAtomList &a)
++void CollectionMgr::submitVelocities(int seq, int zero, FullAtomList &a, int prec)
+ {
+   int numAtoms = a.size();
+   AtomIDList aid(numAtoms);
+@@ -263,17 +311,19 @@ void CollectionMgr::submitVelocities(int seq, int zero, FullAtomList &a)
+     else d[i] = a[i].velocity;
+   }
+   CollectVectorInstance *c;
+-  if ( ( c = velocities.submitData(seq,aid,d) ) )
++  if ( ( c = velocities.submitData(seq,aid,d,prec) ) )
+   {
+     int aid_size = c->aid.size();
+     int data_size = c->data.size();
+-    CollectVectorMsg *msg = new (aid_size, data_size, 0, 0) CollectVectorMsg;
++    int fdata_size = c->fdata.size();
++    CollectVectorMsg *msg = new (aid_size, data_size, fdata_size, 0) CollectVectorMsg;
+     msg->seq = c->seq;
+     msg->aid_size = aid_size;
+     msg->data_size = data_size;
+-    msg->fdata_size = 0;
++    msg->fdata_size = fdata_size;
+     memcpy(msg->aid,c->aid.begin(),aid_size*sizeof(AtomID));
+     memcpy(msg->data,c->data.begin(),data_size*sizeof(Vector));
++    memcpy(msg->fdata,c->fdata.begin(),fdata_size*sizeof(FloatVector));
+ #ifdef NODEGROUP_FORCE_REGISTER
+     if (Node::Object()->simParameters->CUDASOAintegrate) {
+       CProxy_PatchData cpdata(CkpvAccess(BOCclass_group).patchData);
+@@ -292,7 +342,7 @@ void CollectionMgr::submitVelocities(int seq, int zero, FullAtomList &a)
+   }
+ }
+  
+-void CollectionMgr::submitForces(int seq, FullAtomList &a, int maxForceUsed, ForceList *f)
++void CollectionMgr::submitForces(int seq, FullAtomList &a, int maxForceUsed, ForceList *f, int prec)
+ {
+   int numAtoms = a.size();
+   AtomIDList aid(numAtoms);
+@@ -313,17 +363,19 @@ void CollectionMgr::submitForces(int seq, FullAtomList &a, int maxForceUsed, For
+     }
+   }
+   CollectVectorInstance *c;
+-  if ( ( c = forces.submitData(seq,aid,d) ) )
++  if ( ( c = forces.submitData(seq,aid,d,prec) ) )
+   {
+     int aid_size = c->aid.size();
+     int data_size = c->data.size();
+-    CollectVectorMsg *msg = new (aid_size, data_size, 0, 0) CollectVectorMsg;
++    int fdata_size = c->fdata.size();
++    CollectVectorMsg *msg = new (aid_size, data_size, fdata_size, 0) CollectVectorMsg;
+     msg->seq = c->seq;
+     msg->aid_size = aid_size;
+     msg->data_size = data_size;
+-    msg->fdata_size = 0;
++    msg->fdata_size = fdata_size;
+     memcpy(msg->aid,c->aid.begin(),aid_size*sizeof(AtomID));
+     memcpy(msg->data,c->data.begin(),data_size*sizeof(Vector));
++    memcpy(msg->fdata,c->fdata.begin(),fdata_size*sizeof(FloatVector));
+ #ifdef NODEGROUP_FORCE_REGISTER
+     if (Node::Object()->simParameters->CUDASOAintegrate) {
+       CProxy_PatchData cpdata(CkpvAccess(BOCclass_group).patchData);
+diff --git a/src/CollectionMgr.h b/src/CollectionMgr.h
+index ddff8f0..f129a73 100644
+--- a/src/CollectionMgr.h
++++ b/src/CollectionMgr.h
+@@ -34,8 +34,8 @@ public:
+   ~CollectionMgr(void);
+ 
+   void submitPositions(int seq, FullAtomList &a, Lattice l, int prec);
+-  void submitVelocities(int seq, int zero, FullAtomList &a);
+-  void submitForces(int seq, FullAtomList &a, int maxForceUsed, ForceList *f);
++  void submitVelocities(int seq, int zero, FullAtomList &a, int prec);
++  void submitForces(int seq, FullAtomList &a, int maxForceUsed, ForceList *f, int prec);
+   void sendDataStream(const char *);
+   
+   CkChareID getMasterChareID() { return master; }  
+diff --git a/src/Controller.C b/src/Controller.C
+index e1d5e46..23938a0 100644
+--- a/src/Controller.C
++++ b/src/Controller.C
+@@ -43,6 +43,9 @@
+ 
+ #include "ComputeNonbondedMICKernel.h"
+ 
++#define IMDv2 2
++#define IMDv3 3
++
+ #if defined(USE_GETTIMEOFDAY)
+ #include <sys/time.h>
+ // Replace CmiWallTimer with our own based on gettimeofday
+@@ -4308,7 +4311,23 @@ void Controller::printEnergies(int step, int minimize)
+ 
+     // ONLY OUTPUT SHOULD OCCUR BELOW THIS LINE!!!
+ 
+-    if (simParams->IMDon && !(step % simParams->IMDfreq)) {
++    if (simParams->IMDon) {
++    if ( ((step % simParams->IMDfreq) == 0) &&
++         ((simParams->IMDversion == IMDv3) 
++         && (simParams->IMDsendsettings.time_switch == 1) 
++         && (step != simParams->firstTimestep)) ) {
++      IMDOutput *imd = NULL;
++      {
++        imd = Node::Object()->imd;
++      }
++      
++      IMDTime time = {simParams->dt * 0.001, simParams->dt * 0.001 * step, step}; // convert to ps
++
++      if (imd != NULL) imd->gather_time(&time);
++    }
++    
++    if (!(step % simParams->IMDfreq) && ((simParams->IMDversion == IMDv2) || 
++        ((simParams->IMDversion == IMDv3) && (simParams->IMDsendsettings.energies_switch == 1) && (step != simParams->firstTimestep)))) {
+       IMDEnergies energies;
+       energies.tstep = step;
+       energies.T = temp_avg/avg_count;
+@@ -4322,6 +4341,7 @@ void Controller::printEnergies(int step, int minimize)
+       energies.Eimpr = improperEnergy;
+       Node::Object()->imd->gather_energies(&energies);
+     }
++    }
+ 
+     if ( marginViolations ) {
+       iout << iERROR << marginViolations <<
+diff --git a/src/GlobalMasterIMD.C b/src/GlobalMasterIMD.C
+index 354c0c1..fa2eb4a 100644
+--- a/src/GlobalMasterIMD.C
++++ b/src/GlobalMasterIMD.C
+@@ -21,6 +21,9 @@
+ #define MIN_DEBUG_LEVEL 1
+ #include "Debug.h"
+ 
++#define IMDv2 2
++#define IMDv3 3
++
+ struct vmdforce {
+   int index;
+   Vector force;
+@@ -54,9 +57,11 @@ GlobalMasterIMD::GlobalMasterIMD() {
+   DebugM(3,"Constructing\n");
+   SimParameters *simparams = Node::Object()->simParameters;
+   int port = simparams->IMDport;
++  IMDversion = simparams->IMDversion;
+   IMDwait = simparams->IMDwait;
+   IMDignore = simparams->IMDignore;
+   IMDignoreForces = simparams->IMDignoreForces;
++  IMDsendsettings = simparams->IMDsendsettings;
+   coordtmp = NULL;
+   coordtmpsize = 0;
+ 
+@@ -89,12 +94,20 @@ GlobalMasterIMD::~GlobalMasterIMD() {
+   delete [] coordtmp;
+ }
+ 
+-static int my_imd_connect(void *s) {
+-  if (imd_handshake(s)) {
++static int my_imd_connect(void *s, const int IMDversion, const IMDSessionInfo *sessionInfo) {
++  if (imd_handshake(s, IMDversion)) {
+     iout << iWARN << "IMD handshake failed\n" << endi;
+     return 0;
+   }
+ 
++  if (IMDversion == IMDv3) {
++    iout << iWARN << "IMD protocol version 3 detected\n" << endi;
++    if (imd_sessioninfo(s, sessionInfo)) {
++      iout << iWARN << "IMD sessioninfo not received\n" << endi;
++      return 0;
++    }
++  }
++
+   // Wait a second, then see if VMD has responded.
+   int32 length;
+   if (vmdsock_selread(s,1) != 1 || imd_recv_header(s, &length) != IMD_GO) {
+@@ -127,7 +140,7 @@ void GlobalMasterIMD::calculate() {
+     if (!clientsock) {
+       iout << iWARN << "IMD socket accept failed\n" << endi;
+     } else {
+-      if (!my_imd_connect(clientsock)) {
++      if (!my_imd_connect(clientsock, IMDversion, &IMDsendsettings)) {
+         iout << iWARN << "IMD connection failed\n" << endi;
+         vmdsock_destroy(clientsock);
+       } else {
+@@ -247,15 +260,33 @@ void GlobalMasterIMD::get_vmd_forces() {
+             iout << iWARN << "Ignoring IMD pause due to IMDignore\n" << endi;
+             break;
+           }
++          if (IMDversion == IMDv2) {
++            if ( paused ) {
++              iout << iINFO << "Resuming IMD\n" << endi;
++              IMDwait = Node::Object()->simParameters->IMDwait;
++            }
++            paused = ! paused;
++            if ( paused ) {
++              iout << iINFO << "Pausing IMD\n" << endi;
++              IMDwait = 1;
++            }
++          } else if (IMDversion == IMDv3) {
++            if ( paused ) {
++              iout << iINFO << "Already paused\n" << endi;
++            }
++            if ( ! paused ) {
++              iout << iINFO << "Pausing IMD\n" << endi;
++              IMDwait = 1;
++              paused = ! paused;
++            }
++          }
++          break;
++        case IMD_RESUME:
+           if ( paused ) {
+             iout << iINFO << "Resuming IMD\n" << endi;
+             IMDwait = Node::Object()->simParameters->IMDwait;
+           }
+           paused = ! paused;
+-          if ( paused ) {
+-            iout << iINFO << "Pausing IMD\n" << endi;
+-            IMDwait = 1;
+-          }
+           break;
+         case IMD_IOERROR:
+           iout << iWARN << "IMD connection lost\n" << endi;
+@@ -264,8 +295,10 @@ void GlobalMasterIMD::get_vmd_forces() {
+           vmdDestroySocket:
+           vmdsock_destroy(clientsock);
+           clients.del(i_client);
+-          // Enable the MD to continue after detach
+-          if (IMDwait) IMDwait = 0;
++          // Enable the MD to continue after detach if IMD is v2
++          if (IMDversion == IMDv2) {
++            if (IMDwait) IMDwait = 0;
++          }
+           goto vmdEnd;
+         case IMD_KILL:
+           if (IMDignore) {
+@@ -283,6 +316,9 @@ void GlobalMasterIMD::get_vmd_forces() {
+           imd_recv_fcoords(clientsock, length, vmd_forces);
+           delete [] vmd_forces;
+           break;
++        case IMD_WAIT:
++          IMDwait = length;
++          iout << iINFO << "IMD set to " << (IMDwait ? "wait" : "not wait") << "for incoming connection" << '\n' << endi;
+         default: ;
+       }
+     }
+@@ -319,3 +355,63 @@ void GlobalMasterIMD::send_fcoords(int N, FloatVector *coords) {
+     }
+   }
+ }
++
++void GlobalMasterIMD::send_velocities(int N, FloatVector *velocities) {
++  for (int i=0; i<clients.size(); i++) {
++    void *clientsock = clients[i];
++    if (!clientsock || !vmdsock_selwrite(clientsock,0)) continue;
++    if (sizeof(FloatVector) == 3*sizeof(float)) {
++      imd_send_velocities(clientsock, N, (float *)velocities);
++    } else {
++      if (veltmpsize < N) {
++        delete [] veltmp;
++        veltmp = new float[3*N];
++        veltmpsize = N;
++      }
++      for (int i=0; i<N; i++) {
++        veltmp[3*i] = velocities[i].x; 
++        veltmp[3*i+1] = velocities[i].y; 
++        veltmp[3*i+2] = velocities[i].z; 
++      } 
++      imd_send_velocities(clientsock, N, veltmp);
++    }
++  }
++}
++
++void GlobalMasterIMD::send_forces(int N, FloatVector *forces) {
++  for (int i=0; i<clients.size(); i++) {
++    void *clientsock = clients[i];
++    if (!clientsock || !vmdsock_selwrite(clientsock,0)) continue;
++    if (sizeof(FloatVector) == 3*sizeof(float)) {
++      imd_send_forces(clientsock, N, (float *)forces);
++    } else {
++      if (forcetmpsize < N) {
++        delete [] forcetmp;
++        forcetmp = new float[3*N];
++        forcetmpsize = N;
++      }
++      for (int i=0; i<N; i++) {
++        forcetmp[3*i] = forces[i].x; 
++        forcetmp[3*i+1] = forces[i].y; 
++        forcetmp[3*i+2] = forces[i].z; 
++      } 
++      imd_send_forces(clientsock, N, forcetmp);
++    }
++  }
++}
++
++void GlobalMasterIMD::send_box(IMDBox *box) {
++  for (int i=0; i<clients.size(); i++) {
++    void *clientsock = clients[i];
++    if (!clientsock || !vmdsock_selwrite(clientsock,0)) continue;
++    imd_send_box(clientsock, box);
++  }
++}
++
++void GlobalMasterIMD::send_time(IMDTime *time) {
++  for (int i=0; i<clients.size(); i++) {
++    void *clientsock = clients[i];
++    if (!clientsock || !vmdsock_selwrite(clientsock,0)) continue;
++    imd_send_time(clientsock, time);
++  }
++}
+\ No newline at end of file
+diff --git a/src/GlobalMasterIMD.h b/src/GlobalMasterIMD.h
+index a0123fb..8af6eb7 100644
+--- a/src/GlobalMasterIMD.h
++++ b/src/GlobalMasterIMD.h
+@@ -21,6 +21,10 @@ class GlobalMasterIMD : public GlobalMaster {
+ 
+   void send_energies(IMDEnergies *);
+   void send_fcoords(int, FloatVector *);
++  void send_velocities(int, FloatVector *);
++  void send_forces(int, FloatVector *);
++  void send_box(IMDBox *);
++  void send_time(IMDTime *);
+ 
+  protected:
+ 
+@@ -31,6 +35,9 @@ class GlobalMasterIMD : public GlobalMaster {
+   // Simple function for getting MDComm-style forces from VMD
+   void get_vmd_forces();
+ 
++  // IMD protocol version
++  int IMDversion;
++
+   // flag for whether to proceed with simulation when there are no connections
+   int IMDwait;
+ 
+@@ -40,6 +47,9 @@ class GlobalMasterIMD : public GlobalMaster {
+   // flag for whether to ignore only forces
+   int IMDignoreForces;
+ 
++  // IMD session info i.e. send settings
++  IMDSessionInfo IMDsendsettings;
++
+   // My server socket handle
+   void *sock;
+ 
+@@ -49,6 +59,12 @@ class GlobalMasterIMD : public GlobalMaster {
+   // temporaries in case 3*sizeof(float) != sizeof(FloatVector)
+   float *coordtmp;
+   int coordtmpsize;
++
++  float *veltmp;
++  int veltmpsize;
++
++  float *forcetmp;
++  int forcetmpsize;
+ };
+ 
+ #endif
+diff --git a/src/IMDOutput.C b/src/IMDOutput.C
+index 65134f6..23b9bda 100644
+--- a/src/IMDOutput.C
++++ b/src/IMDOutput.C
+@@ -35,3 +35,33 @@ void IMDOutput::gather_coordinates(int timestep, int N, FloatVector *coords) {
+   imd->send_fcoords(N, coords);
+ }
+ 
++void IMDOutput::gather_velocities(int timestep, int N, FloatVector *velocities) {
++  if ( ignore ) {
++    imd->step = timestep;
++    imd->calculate();
++  }
++  if (!imd || timestep % transrate) return;
++  imd->send_velocities(N, velocities);
++}
++
++void IMDOutput::gather_forces(int timestep, int N, FloatVector *forces) {
++  if ( ignore ) {
++    imd->step = timestep;
++    imd->calculate();
++  }
++  if (!imd || timestep % transrate) return;
++  imd->send_forces(N, forces);
++}
++
++void IMDOutput::gather_box(int timestep, IMDBox *box) {
++  if (!imd || timestep % transrate) return;
++  imd->send_box(box);
++}
++
++void IMDOutput::gather_time(IMDTime *time) {
++  if (!imd || time->tstep % transrate) return;
++  imd->send_time(time);
++}
++
++
++
+diff --git a/src/IMDOutput.h b/src/IMDOutput.h
+index 9bf5c45..0684483 100644
+--- a/src/IMDOutput.h
++++ b/src/IMDOutput.h
+@@ -29,8 +29,12 @@ public:
+ 
+   // gather_* are called by Controller with the current timesteps and
+   // energies.
++  void gather_time(IMDTime *time);
++  void gather_box(int timestep, IMDBox *box);
+   void gather_energies(IMDEnergies *energies); 
+   void gather_coordinates(int timestep, int N, FloatVector *coords);
++  void gather_velocities(int timestep, int N, FloatVector *velocities);
++  void gather_forces(int timestep, int N, FloatVector *forces);
+ 
+   // called by GlobalMasterIMD to set the transfer rate.  Should probably
+   // be handled internally by GlobalMasterIMD instead.
+diff --git a/src/Output.C b/src/Output.C
+index 62d46af..2af7086 100644
+--- a/src/Output.C
++++ b/src/Output.C
+@@ -56,6 +56,9 @@
+ #define O_LARGEFILE 0x0
+ #endif
+ 
++#define IMDv2 2
++#define IMDv3 3
++
+ // same as open, only does error checking internally
+ int NAMD_open(const char *fname) {
+   int fd;
+@@ -218,7 +221,9 @@ int Output::coordinateNeeded(int timestep)
+     //  Iteractive MD
+     if ( simParams->IMDon &&
+        ( ((timestep % simParams->IMDfreq) == 0) ||
+-         (timestep == simParams->firstTimestep) ) )
++         (timestep == simParams->firstTimestep) ) &&
++         ((simParams->IMDversion == IMDv2) || ((simParams->IMDversion == IMDv3) 
++         && (simParams->IMDsendsettings.fcoords_switch == 1))) )
+       { positionsNeeded |= 1; }
+ 
+   }
+@@ -309,6 +314,10 @@ void Output::coordinate(int timestep, int n, Vector *coor, FloatVector *fcoor,
+        ( ((timestep % simParams->IMDfreq) == 0) ||
+          (timestep == simParams->firstTimestep) ) )
+     {
++
++    if ((simParams->IMDversion == IMDv3) 
++         && (simParams->IMDsendsettings.box_switch == 1))
++    {
+       IMDOutput *imd = NULL;
+ #ifdef NODEGROUP_FORCE_REGISTER
+       if (simParams->CUDASOAintegrate) {
+@@ -320,9 +329,35 @@ void Output::coordinate(int timestep, int n, Vector *coor, FloatVector *fcoor,
+       {
+         imd = Node::Object()->imd;
+       }
++
++      IMDBox box = {lattice.a().x, lattice.a().y, lattice.a().z,
++                    lattice.b().x, lattice.b().y, lattice.b().z,
++                    lattice.c().x, lattice.c().y, lattice.c().z};
++
++      if (imd != NULL) imd->gather_box(timestep, &box);
++    }
++
++    if ((simParams->IMDversion == IMDv2) || ((simParams->IMDversion == IMDv3) 
++         && (simParams->IMDsendsettings.fcoords_switch == 1)))
++    {
++      IMDOutput *imd = NULL;
++#ifdef NODEGROUP_FORCE_REGISTER
++      if (simParams->CUDASOAintegrate) {
++        CProxy_PatchData cpdata(CkpvAccess(BOCclass_group).patchData);
++        imd = cpdata.ckLocalBranch()->imd;
++      }
++      else
++#endif
++      {
++        imd = Node::Object()->imd;
++      }
++      if ((simParams->IMDversion == IMDv2) || ((simParams->IMDversion == IMDv3) 
++         && (simParams->IMDsendsettings.wrap_switch == 1)))
+       wrap_coor(fcoor,lattice,&fcoor_wrapped);
+       if (imd != NULL) imd->gather_coordinates(timestep, n, fcoor);
+     }
++    
++    }
+ 
+   }
+ 
+@@ -392,6 +427,14 @@ int Output::velocityNeeded(int timestep)
+        ((timestep % simParams->restartFrequency) == 0) )
+       { velocitiesNeeded |= 2; }
+ 
++    //  Interactive MD
++    if ( simParams->IMDon &&
++       ( ((timestep % simParams->IMDfreq) == 0) ||
++         (timestep == simParams->firstTimestep) ) &&
++         ((simParams->IMDversion == IMDv3) 
++         && (simParams->IMDsendsettings.velocities_switch == 1)) )
++      { velocitiesNeeded |= 1; }
++
+   }
+ 
+   //  Output final velocities
+@@ -403,7 +446,7 @@ int Output::velocityNeeded(int timestep)
+   return velocitiesNeeded;
+ }
+ 
+-void Output::velocity(int timestep, int n, Vector *vel)
++void Output::velocity(int timestep, int n, Vector *vel, FloatVector *fvel)
+ {
+   SimParameters *simParams = Node::Object()->simParameters;
+ 
+@@ -413,7 +456,7 @@ void Output::velocity(int timestep, int n, Vector *vel)
+     if ( simParams->velDcdFrequency &&
+        ((timestep % simParams->velDcdFrequency) == 0) )
+     {
+-      output_veldcdfile(timestep, n, vel);
++      output_veldcdfile(timestep, n, fvel);
+     }
+ 
+   //  Output restart file
+@@ -427,6 +470,30 @@ void Output::velocity(int timestep, int n, Vector *vel)
+       fflush(stdout);
+     }
+ 
++    //  Interactive MD
++    if ( simParams->IMDon &&
++       ( ((timestep % simParams->IMDfreq) == 0) ||
++         (timestep == simParams->firstTimestep) ) &&
++         ((simParams->IMDversion == IMDv3) 
++         && (simParams->IMDsendsettings.velocities_switch == 1)) )
++    {
++      IMDOutput *imd = NULL;
++#ifdef NODEGROUP_FORCE_REGISTER
++      if (simParams->CUDASOAintegrate) {
++        CProxy_PatchData cpdata(CkpvAccess(BOCclass_group).patchData);
++        imd = cpdata.ckLocalBranch()->imd;
++      }
++      else
++#endif
++      {
++        imd = Node::Object()->imd;
++      }
++      if (imd != NULL) {
++        scale_fvels(fvel, n, PDBVELFACTOR);
++        imd->gather_velocities(timestep, n, fvel);
++      }
++    }
++
+   }
+ 
+   //  Output final velocities
+@@ -482,6 +549,14 @@ int Output::forceNeeded(int timestep)
+        ((timestep % simParams->forceDcdFrequency) == 0) )
+       { forcesNeeded |= 1; }
+ 
++    //  Iteractive MD
++    if ( simParams->IMDon &&
++       ( ((timestep % simParams->IMDfreq) == 0) ||
++         (timestep == simParams->firstTimestep) ) &&
++         ((simParams->IMDversion == IMDv2) || ((simParams->IMDversion == IMDv3) 
++         && (simParams->IMDsendsettings.forces_switch == 1))) )
++      { forcesNeeded |= 1; }
++
+   }
+ 
+   //  Output forces
+@@ -493,7 +568,7 @@ int Output::forceNeeded(int timestep)
+   return forcesNeeded;
+ }
+ 
+-void Output::force(int timestep, int n, Vector *frc)
++void Output::force(int timestep, int n, Vector *frc, FloatVector *ffrc)
+ {
+   SimParameters *simParams = Node::Object()->simParameters;
+ 
+@@ -503,7 +578,28 @@ void Output::force(int timestep, int n, Vector *frc)
+     if ( simParams->forceDcdFrequency &&
+        ((timestep % simParams->forceDcdFrequency) == 0) )
+     {
+-      output_forcedcdfile(timestep, n, frc);
++      output_forcedcdfile(timestep, n, ffrc);
++    }
++
++    //  Interactive MD
++    if ( simParams->IMDon &&
++       ( ((timestep % simParams->IMDfreq) == 0) ||
++         (timestep == simParams->firstTimestep) ) &&
++         ((simParams->IMDversion == IMDv2) || ((simParams->IMDversion == IMDv3) 
++         && (simParams->IMDsendsettings.forces_switch == 1))) )
++    {
++      IMDOutput *imd = NULL;
++#ifdef NODEGROUP_FORCE_REGISTER
++      if (simParams->CUDASOAintegrate) {
++        CProxy_PatchData cpdata(CkpvAccess(BOCclass_group).patchData);
++        imd = cpdata.ckLocalBranch()->imd;
++      }
++      else
++#endif
++      {
++        imd = Node::Object()->imd;
++      }
++      if (imd != NULL) imd->gather_forces(timestep, n, ffrc);
+     }
+ 
+   }
+@@ -1070,7 +1166,7 @@ void Output::output_final_velocities(int timestep, int n, Vector *vel)
+ /*                  */
+ /************************************************************************/
+ 
+-void Output::output_veldcdfile(int timestep, int n, Vector *vel)
++void Output::output_veldcdfile(int timestep, int n, FloatVector *vel)
+ 
+ {
+   static Bool first=TRUE;  //  Flag indicating first call
+@@ -1244,7 +1340,7 @@ void Output::output_forces(int timestep, int n, Vector *frc)
+ /*                  */
+ /************************************************************************/
+ 
+-void Output::output_forcedcdfile(int timestep, int n, Vector *frc)
++void Output::output_forcedcdfile(int timestep, int n, FloatVector *frc)
+ 
+ {
+   static Bool first=TRUE;  //  Flag indicating first call
+@@ -1409,6 +1505,35 @@ void Output::scale_vels(Vector *v, int n, Real fact)
+ }
+ /*      END OF FUNCTION scale_vels      */
+ 
++/************************************************************************/
++/*                  */
++/*      FUNCTION scale_fvels        */
++/*                  */
++/*   INPUTS:                */
++/*  v - Array of velocity float vectors          */
++/*  n - Number of atoms in system          */
++/*  fact - Scaling factor            */
++/*                  */
++/*  This function scales all the vectors passed in by a constant  */
++/*   factor.  This is used before writing out velocity vectors that  */
++/*   need to be resized.            */
++/*                  */
++/************************************************************************/
++
++void Output::scale_fvels(FloatVector *v, int n, Real fact)
++
++{
++  int i;
++
++  for (i=0; i<n; i++)
++  {
++    v[i].x *= fact;
++    v[i].y *= fact;
++    v[i].z *= fact;
++  }
++}
++/*      END OF FUNCTION scale_fvels      */
++
+ 
+ #ifdef MEM_OPT_VERSION
+ //////Beginning of Functions related with velocity output//////
+diff --git a/src/Output.h b/src/Output.h
+index 71d587c..1b550ca 100644
+--- a/src/Output.h
++++ b/src/Output.h
+@@ -50,9 +50,9 @@ friend class SimParameters;
+    //  output coords to dcd file
+    //  Pass non-NULL Lattice to include unit cell in the timesteps.
+    int output_dcdfile(int, int, FloatVector *, const Lattice *); 
+-   void output_veldcdfile(int, int, Vector *); 	//  output velocities to
++   void output_veldcdfile(int, int, FloatVector *); 	//  output velocities to
+ 						//  dcd file
+-   void output_forcedcdfile(int, int, Vector *); //  output forces to
++   void output_forcedcdfile(int, int, FloatVector *); //  output forces to
+ 						//  dcd file
+ 
+    void output_restart_coordinates(Vector *, int, int);
+@@ -66,6 +66,7 @@ friend class SimParameters;
+    void output_forces(int, int, Vector *);	//  output forces
+ 
+    void scale_vels(Vector *, int, Real);	//  scale velocity vectors before output
++   void scale_fvels(FloatVector *, int, Real);	//  scale velocity vectors before output / IMD send
+    void write_binary_file(char *, int, Vector *); // Write a binary restart file with
+ 						//  coordinates or velocities
+ 
+@@ -89,11 +90,11 @@ public :
+ 						//  coordinate output for 
+ 						//  the current timestep
+    static int velocityNeeded(int);
+-   void velocity(int, int, Vector *);		//  Produce appropriate velocity
++   void velocity(int, int, Vector *, FloatVector *);		//  Produce appropriate velocity
+ 						//  output for the current 
+ 						//  timestep
+    static int forceNeeded(int);
+-   void force(int, int, Vector *);		//  Produce appropriate force
++   void force(int, int, Vector *, FloatVector *);		//  Produce appropriate force
+ 						//  output for the current 
+ 						//  timestep
+ 
+diff --git a/src/Sequencer.C b/src/Sequencer.C
+index 272f563..308cf52 100644
+--- a/src/Sequencer.C
++++ b/src/Sequencer.C
+@@ -3034,12 +3034,12 @@ void Sequencer::submitCollections_SOA(int step, int zeroVel /* = 0 */)
+     collection->submitPositions(step,patch->atom,patch->lattice,is_pos_needed);
+   }
+   if ( is_vel_needed ) {
+-    collection->submitVelocities(step,zeroVel,patch->atom);
++    collection->submitVelocities(step,zeroVel,patch->atom,is_vel_needed);
+   }
+   if ( is_f_needed ) {
+     int maxForceUsed = patch->flags.maxForceUsed;
+     if ( maxForceUsed > Results::slow ) maxForceUsed = Results::slow;
+-    collection->submitForces(step,patch->atom,maxForceUsed,patch->f);
++    collection->submitForces(step,patch->atom,maxForceUsed,patch->f,is_f_needed);
+   }
+ }
+ 
+@@ -6193,13 +6193,15 @@ void Sequencer::submitCollections(int step, int zeroVel)
+   if ( prec ) {
+     collection->submitPositions(step,patch->atom,patch->lattice,prec);
+   }
+-  if ( Output::velocityNeeded(step) ) {
+-    collection->submitVelocities(step,zeroVel,patch->atom);
++  prec = Output::velocityNeeded(step);
++  if ( prec ) {
++    collection->submitVelocities(step,zeroVel,patch->atom,prec);
+   }
+-  if ( Output::forceNeeded(step) ) {
++  prec = Output::forceNeeded(step);
++  if ( prec ) {
+     int maxForceUsed = patch->flags.maxForceUsed;
+     if ( maxForceUsed > Results::slow ) maxForceUsed = Results::slow;
+-    collection->submitForces(step,patch->atom,maxForceUsed,patch->f);
++    collection->submitForces(step,patch->atom,maxForceUsed,patch->f,prec);
+   }
+ }
+ 
+diff --git a/src/SimParameters.C b/src/SimParameters.C
+index dc60255..7f60038 100644
+--- a/src/SimParameters.C
++++ b/src/SimParameters.C
+@@ -105,6 +105,8 @@ extern int avxTilesCommandLineDisable;
+ 
+ #define XXXBIGREAL 1.0e32
+ 
++#define IMDv3 3 
++
+ 
+ char* SimParameters::getfromparseopts(const char* name, char *outbuf) {
+   if ( parseopts ) return parseopts->getfromptr(name,outbuf);
+@@ -2448,6 +2450,8 @@ void SimParameters::config_parser_misc(ParseOptions &opts) {
+ 
+    // IMD options
+    opts.optionalB("main","IMDon","Connect using IMD?",&IMDon, FALSE);
++   opts.optional("IMDon","IMDversion","IMD protocol version number",&IMDversion,2);
++   opts.range("IMDversion",POSITIVE);
+    opts.require("IMDon","IMDport", "Port to which to bind", &IMDport);
+    opts.range("IMDport",POSITIVE);
+    opts.require("IMDon","IMDfreq", "Frequency at which to report", &IMDfreq);
+@@ -2458,6 +2462,20 @@ void SimParameters::config_parser_misc(ParseOptions &opts) {
+      FALSE);
+    opts.optionalB("IMDon","IMDignoreForces","Ignore forces ONLY?",&IMDignoreForces,
+      FALSE);
++   opts.optionalB("IMDon","IMDsendTime","Send time information",&IMDsendsettings.time_switch,
++     FALSE);
++   opts.optionalB("IMDon","IMDsendEnergies","Send energies via IMD:",&IMDsendsettings.energies_switch,
++     TRUE);
++   opts.optionalB("IMDon","IMDsendBoxDimensions","Send box dimensions via IMD:",&IMDsendsettings.box_switch,
++     FALSE);
++   opts.optionalB("IMDon","IMDsendPositions","Send positions via IMD:",&IMDsendsettings.fcoords_switch,
++     TRUE);
++   opts.optionalB("IMDon","IMDwrapPositions","Send positions as wrapped:",&IMDsendsettings.wrap_switch,
++     TRUE);
++   opts.optionalB("IMDon","IMDsendVelocities","Send velocities via IMD:",&IMDsendsettings.velocities_switch,
++     FALSE);
++   opts.optionalB("IMDon","IMDsendForces","Send forces via IMD:",&IMDsendsettings.forces_switch,
++     FALSE);
+    // Maximum Partition options
+    opts.optional("ldBalancer", "maxSelfPart", 
+      "maximum number of self partitions in one patch", &maxSelfPart, 20);
+@@ -6227,6 +6245,7 @@ if ( openatomOn )
+    if (IMDon)
+    {
+      iout << iINFO << "INTERACTIVE MD ACTIVE\n";
++     iout << iINFO << "INTERACTIVE MD VERSION    " << IMDversion << "\n";
+      iout << iINFO << "INTERACTIVE MD PORT    " << IMDport << "\n";
+      iout << iINFO << "INTERACTIVE MD FREQ    " << IMDfreq << "\n";
+      if (IMDignore) {
+@@ -6239,6 +6258,31 @@ if ( openatomOn )
+          }
+        if (IMDwait) iout << iINFO << "WILL AWAIT INTERACTIVE MD CONNECTION\n";
+      }
++     if (IMDversion == IMDv3) {
++        iout << iINFO << "INTERACTIVE MD WILL SEND THE FOLLOWING:\n";
++        if (IMDsendsettings.time_switch == 1) {
++            iout << iINFO << "TIME\n";
++        }
++        if (IMDsendsettings.box_switch == 1) {
++            iout << iINFO << "BOX DIMENSIONS\n";
++        }
++        if (IMDsendsettings.fcoords_switch == 1) {
++          if (IMDsendsettings.wrap_switch == 1) {
++            iout << iINFO << "WRAPPED COORDINATES\n";
++          } else {
++            iout << iINFO << "UNWRAPPED COORDINATES\n";
++          }
++        }
++        if (IMDsendsettings.velocities_switch == 1) {
++            iout << iINFO << "VELOCITIES\n";
++        }
++        if (IMDsendsettings.forces_switch == 1) {
++            iout << iINFO << "FORCES\n";
++        }
++        if (IMDsendsettings.energies_switch == 1) {
++            iout << iINFO << "ENERGIES\n";
++        }
++     }
+      iout << endi;
+    }
+ 
+diff --git a/src/SimParameters.h b/src/SimParameters.h
+index 0627016..a4296f1 100644
+--- a/src/SimParameters.h
++++ b/src/SimParameters.h
+@@ -17,6 +17,7 @@
+ #include "common.h"
+ #include "Vector.h"
+ #include "Lattice.h"
++#include "imd.h"
+ 
+ #include "MGridforceParams.h"
+ #include "GroupRestraintsParam.h"
+@@ -1044,6 +1045,7 @@ public:
+ 
+ 	// IMD parameters
+ 	int IMDon;    // enable IMD
++        int IMDversion;  // version of IMD protocol
+ 	int IMDport;  // port on which to listen for connections
+  	int IMDfreq;  // frequency at which coordinates will be available
+         int IMDwait;  // if true, pause the simulation when there is no
+@@ -1051,6 +1053,8 @@ public:
+  	int IMDignore;  // IMD connection does not influence simulation
+                         // only sends coordinates and energies to VMD
+  	int IMDignoreForces;  // Only the Forces are ignored. Finish, Pause and Resume are enabled
++        IMDSessionInfo IMDsendsettings = {0,0,1,1,0,0,1}; // information about the current session for sending via IMD
++        // default value is for v2.0
+                 	
+         
+         // AMBER options
+diff --git a/src/imd.C b/src/imd.C
+index 8f70ad2..b77e40d 100644
+--- a/src/imd.C
++++ b/src/imd.C
+@@ -12,7 +12,8 @@ typedef struct {
+ } IMDheader;
+ 
+ #define HEADERSIZE 8
+-#define IMDVERSION 2
++#define IMDv2 2
++#define IMDv3 3
+ 
+ static void swap4(char *data, int ndata) {
+   int i;
+@@ -123,17 +124,17 @@ int imd_kill(void *s) {
+   return (imd_writen(s, (char *)&header, HEADERSIZE) != HEADERSIZE);
+ }
+ 
+-static int imd_go(void *s) {
++int imd_go(void *s) {
+   IMDheader header;
+   fill_header(&header, IMD_GO, 0);
+   return (imd_writen(s, (char *)&header, HEADERSIZE) != HEADERSIZE);
+ }
+ 
+ 
+-int imd_handshake(void *s) {
++int imd_handshake(void *s, const int IMDVersion) {
+   IMDheader header;
+   fill_header(&header, IMD_HANDSHAKE, 1);
+-  header.length = IMDVERSION;   // Not byteswapped!
++  header.length = IMDVersion;   // Not byteswapped!
+   return (imd_writen(s, (char *)&header, HEADERSIZE) != HEADERSIZE);
+ }
+ 
+@@ -145,6 +146,20 @@ int imd_trate(void *s, int32 rate) {
+ 
+ // Data methods
+ 
++template <typename Type>
++int imd_sessioninfo(void *s, const IMDSessionInfo *info) {
++  std::vector<Type> infoData = info->toTypeVector<Type>();
++  int32 size = HEADERSIZE+infoData.size()*sizeof(Type);
++  char *buf = new char[size];
++  fill_header((IMDheader *)buf, IMD_SESSIONINFO, static_cast<int32>(infoData.size()));
++  memcpy((void *)(buf+HEADERSIZE), (const void *)(infoData.data()), infoData.size()*sizeof(Type));
++  int rc = (imd_writen(s, buf, size) != size);
++  delete [] buf;
++  return rc;
++}
++
++template int imd_sessioninfo<char>(void *s, const IMDSessionInfo *info);
++
+ int imd_send_mdcomm(void *s,int32 n,const int32 *indices,const float *forces) {
+   int32 size = HEADERSIZE+16*n;
+   char *buf = new char[size]; 
+@@ -176,6 +191,45 @@ int imd_send_fcoords(void *s, int32 n, const float *coords) {
+   return rc;
+ }
+ 
++int imd_send_velocities(void *s, int32 n, const float *vels) {
++  int32 size = HEADERSIZE+3*n*sizeof(float);
++  char *buf = new char[size];
++  fill_header((IMDheader *)buf, IMD_VELOCITIES, n);
++  memcpy((void *)(buf+HEADERSIZE), (const void *)vels, 3*n*sizeof(float));
++  int rc = (imd_writen(s, buf, size) != size);
++  delete [] buf;
++  return rc;
++}
++
++int imd_send_forces(void *s, int32 n, const float *forces) {
++  int32 size = HEADERSIZE+3*n*sizeof(float);
++  char *buf = new char[size];
++  fill_header((IMDheader *)buf, IMD_FORCES, n);
++  memcpy((void *)(buf+HEADERSIZE), (const void *)forces, 3*n*sizeof(float));
++  int rc = (imd_writen(s, buf, size) != size);
++  delete [] buf;
++  return rc;
++}
++
++int imd_send_box(void *s, const IMDBox *box) {
++  int32 size = HEADERSIZE+sizeof(IMDBox);
++  char *buf = new char[size];
++  fill_header((IMDheader *)buf, IMD_BOX, 1);
++  memcpy((void *)(buf+HEADERSIZE), (const void *)box, sizeof(IMDBox));
++  int rc = (imd_writen(s, buf, size) != size);
++  delete [] buf;
++  return rc;
++}
++
++int imd_send_time(void *s, const IMDTime *time) {
++  int32 size = HEADERSIZE+sizeof(IMDTime);
++  char *buf = new char[size];
++  fill_header((IMDheader *)buf, IMD_TIME, 1);
++  memcpy((void *)(buf+HEADERSIZE), (const void *)time, sizeof(IMDTime));
++  int rc = (imd_writen(s, buf, size) != size);
++  delete [] buf;
++  return rc;
++}
+ // The IMD receive functions
+ 
+ // The IMD receive functions
+@@ -198,12 +252,12 @@ int imd_recv_handshake(void *s) {
+   if (type != IMD_HANDSHAKE) return -1;
+ 
+   // Check its endianness, as well as the IMD version.
+-  if (buf == IMDVERSION) {
++  if (buf == IMDv2) {
+     if (!imd_go(s)) return 0;
+     return -1;
+   }
+   swap4((char *)&buf, 4);
+-  if (buf == IMDVERSION) {
++  if (buf == IMDv2) {
+     if (!imd_go(s)) return 1;
+   }
+   
+@@ -237,3 +291,19 @@ int imd_recv_fcoords(void *s, int32 n, float *coords) {
+   return (imd_readn(s, (char *)coords, 12*n) != 12*n);
+ }
+ 
++int imd_recv_velocities(void *s, int32 n, float *vels) {
++  return (imd_readn(s, (char *)vels, 12*n) != 12*n);
++}
++
++int imd_recv_forces(void *s, int32 n, float *forces) {
++  return (imd_readn(s, (char *)forces, 12*n) != 12*n);
++}
++
++int imd_recv_box(void *s, IMDBox *box) {
++  return (imd_readn(s, (char *)box, sizeof(IMDBox)) != sizeof(IMDBox));
++}
++
++int imd_recv_time(void *s, IMDTime *time) {
++  return (imd_readn(s, (char *)time, sizeof(IMDTime)) != sizeof(IMDTime));
++}
++
+diff --git a/src/imd.h b/src/imd.h
+index c2dcd11..72078cc 100644
+--- a/src/imd.h
++++ b/src/imd.h
+@@ -3,6 +3,8 @@
+ #define IMD_H__
+ 
+ #include <limits.h>
++#include <vector>
++#include <common.h>
+ 
+ #if ( INT_MAX == 2147483647 )
+ typedef int     int32;
+@@ -11,16 +13,24 @@ typedef short   int32;
+ #endif
+ 
+ enum IMDType {
+-  IMD_DISCONNECT,
+-  IMD_ENERGIES, 
+-  IMD_FCOORDS,   
+-  IMD_GO,
+-  IMD_HANDSHAKE, 
+-  IMD_KILL,      
+-  IMD_MDCOMM,    
+-  IMD_PAUSE,
+-  IMD_TRATE,
+-  IMD_IOERROR
++  IMD_DISCONNECT, //  = 0
++  IMD_ENERGIES, //  = 1
++  IMD_FCOORDS, // = 2
++  IMD_GO, // = 3
++  IMD_HANDSHAKE, // = 4
++  IMD_KILL, // = 5
++  IMD_MDCOMM, // = 6
++  IMD_PAUSE, // = 7
++  IMD_TRATE, // = 8
++  IMD_IOERROR, // = 9
++  //  New in IMD v3
++  IMD_SESSIONINFO, // = 10
++  IMD_RESUME, // = 11
++  IMD_TIME, // = 12
++  IMD_BOX, // = 13
++  IMD_VELOCITIES, // = 14
++  IMD_FORCES, // = 15
++  IMD_WAIT, // = 16
+ };
+ 
+ typedef struct {
+@@ -36,17 +46,60 @@ typedef struct {
+   float Eimpr;
+ } IMDEnergies;
+ 
++typedef struct {
++  BigReal dt;
++  BigReal time;
++  long int tstep;
++} IMDTime;
++
++typedef struct {
++  float ax, ay, az;
++  float bx, by, bz;
++  float cx, cy, cz;
++} IMDBox;
++
++typedef struct {
++  int time_switch;
++  int energies_switch;
++  int box_switch;
++  int fcoords_switch;
++  int wrap_switch;
++  int velocities_switch;
++  int forces_switch;
++
++  // Method to convert IMDSessionInfo into a std::vector<Type>
++  template <typename Type = char>
++  std::vector<Type> toTypeVector() const {
++    std::vector<Type> data;
++    data.push_back(static_cast<Type>(time_switch));
++    data.push_back(static_cast<Type>(energies_switch));
++    data.push_back(static_cast<Type>(box_switch));
++    data.push_back(static_cast<Type>(fcoords_switch));
++    data.push_back(static_cast<Type>(wrap_switch));
++    data.push_back(static_cast<Type>(velocities_switch));
++    data.push_back(static_cast<Type>(forces_switch));
++    return data;
++  }
++
++} IMDSessionInfo;
++
+ // Send simple messages - these consist of a header with no subsequent data
+ extern int   imd_disconnect(void *);
+ extern int   imd_pause(void *);
+ extern int   imd_kill(void *);
+-extern int   imd_handshake(void *);
++extern int   imd_handshake(void *, const int);
+ extern int   imd_trate(void *, int32);
++template <typename Type = char>
++extern int   imd_sessioninfo(void *, const IMDSessionInfo *);
+ 
+ // Send data
+ extern int   imd_send_mdcomm(void *, int32, const int32 *, const float *);
+ extern int   imd_send_energies(void *, const IMDEnergies *);
+ extern int   imd_send_fcoords(void *, int32, const float *);
++extern int   imd_send_velocities(void *, int32, const float *);
++extern int   imd_send_forces(void *, int32, const float *);
++extern int   imd_send_box(void *, const IMDBox *);
++extern int   imd_send_time(void *, const IMDTime *);
+ 
+ /// Receive header and data 
+ 
+@@ -59,6 +112,10 @@ extern IMDType imd_recv_header(void *, int32 *);
+ extern int imd_recv_mdcomm(void *, int32, int32 *, float *);
+ extern int imd_recv_energies(void *, IMDEnergies *);
+ extern int imd_recv_fcoords(void *, int32, float *);
++extern int imd_recv_velocities(void *, int32, float *);
++extern int imd_recv_forces(void *, int32, float *);
++extern int imd_recv_box(void *, IMDBox *);
++extern int imd_recv_time(void *, IMDTime *);
+ 
+ #endif
+ 
