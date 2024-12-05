@@ -12,19 +12,6 @@ index 0000000..3db89aa
 +
 +# Ignore build artifacts
 +Linux-x86_64*
-diff --git a/.vscode/settings.json b/.vscode/settings.json
-new file mode 100644
-index 0000000..7b67444
---- /dev/null
-+++ b/.vscode/settings.json
-@@ -0,0 +1,6 @@
-+{
-+    "files.associations": {
-+        "*.m": "matlab",
-+        "imd.C": "cpp"
-+    }
-+}
-\ No newline at end of file
 diff --git a/IMDv3-dev.md b/IMDv3-dev.md
 new file mode 100644
 index 0000000..50f39b6
